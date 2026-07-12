@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Matchdeck</string>
+    <string name="title_activity_main">Matchdeck</string>
+    <string name="package_name">com.matchdeck.app</string>
+    <string name="custom_url_scheme">com.matchdeck.app</string>
+</resources>

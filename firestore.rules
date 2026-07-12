@@ -1,0 +1,164 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Primitive helper definitions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Entity validations
+    function isValidUser(data) {
+      return data.keys().hasAll(['id', 'name', 'gender'])
+        && data.id is string && data.id.size() <= 128
+        && data.name is string && data.name.size() <= 100
+        && data.gender is string && (data.gender == 'masculino' || data.gender == 'feminino' || data.gender == 'outro')
+        && (!('age' in data) || data.age is int)
+        && (!('bio' in data) || data.bio is string && data.bio.size() <= 500)
+        && (!('images' in data) || data.images is list)
+        && (!('verified' in data) || data.verified is bool)
+        && (!('isOnline' in data) || data.isOnline is bool)
+        && (!('distance' in data) || data.distance is number)
+        && (!('compatibility' in data) || data.compatibility is number)
+        && (!('city' in data) || data.city is string && data.city.size() <= 100)
+        && (!('jobTitle' in data) || data.jobTitle is string && data.jobTitle.size() <= 100)
+        && (!('company' in data) || data.company is string && data.company.size() <= 100)
+        && (!('education' in data) || data.education is string && data.education.size() <= 100)
+        && (!('relationshipStatus' in data) || data.relationshipStatus is string)
+        && (!('intent' in data) || data.intent is string)
+        && (!('smoking' in data) || data.smoking is string)
+        && (!('drinking' in data) || data.drinking is string)
+        && (!('pets' in data) || data.pets is string)
+        && (!('zodiac' in data) || data.zodiac is string)
+        && (!('religion' in data) || data.religion is string)
+        && (!('personality' in data) || data.personality is string)
+        && (!('isGold' in data) || data.isGold is bool);
+    }
+
+    function isValidSwipe(data) {
+      return data.keys().hasAll(['swiperId', 'swipedId', 'direction'])
+        && data.swiperId is string && data.swiperId.size() <= 128
+        && data.swipedId is string && data.swipedId.size() <= 128
+        && data.direction is string && (data.direction == 'left' || data.direction == 'right' || data.direction == 'up');
+    }
+
+    function isValidTransaction(data) {
+      return data.keys().hasAll(['id', 'userId', 'planName', 'price', 'paymentMethod', 'timestamp', 'status'])
+        && data.id is string && data.id.size() <= 128
+        && data.userId is string && data.userId.size() <= 128
+        && data.planName is string && data.planName.size() <= 100
+        && data.price is string && data.price.size() <= 50
+        && data.paymentMethod is string && (data.paymentMethod == 'card' || data.paymentMethod == 'pix' || data.paymentMethod == 'boleto')
+        && data.timestamp is string
+        && data.status is string && (data.status == 'approved' || data.status == 'pending');
+    }
+
+    function isValidFavorite(data) {
+      return data.keys().hasAll(['id', 'userId', 'favoritedId', 'timestamp'])
+        && data.id is string && data.id.size() <= 128
+        && data.userId is string && data.userId.size() <= 128
+        && data.favoritedId is string && data.favoritedId.size() <= 128
+        && data.timestamp is string;
+    }
+
+    function isValidNotification(data) {
+      return data.keys().hasAll(['id', 'userId', 'type', 'title', 'message', 'timestamp', 'isRead'])
+        && data.id is string && data.id.size() <= 128
+        && data.userId is string && data.userId.size() <= 128
+        && data.type is string && data.type.size() <= 50
+        && data.title is string && data.title.size() <= 200
+        && data.message is string && data.message.size() <= 1000
+        && data.timestamp is string
+        && data.isRead is bool;
+    }
+
+    function isValidMatch(data) {
+      return data.keys().hasAll(['id', 'users'])
+        && data.id is string && data.id.size() <= 128
+        && data.users is list && data.users.size() == 2;
+    }
+
+    function isValidMessage(data) {
+      return data.keys().hasAll(['id', 'senderId', 'timestamp'])
+        && data.id is string && data.id.size() <= 128
+        && data.senderId is string && data.senderId.size() <= 128
+        && (!('text' in data) || data.text is string && data.text.size() <= 2000)
+        && (!('audioUrl' in data) || data.audioUrl is string && data.audioUrl.size() <= 1024)
+        && (!('audioDuration' in data) || data.audioDuration is int);
+    }
+
+    // Rules for User Profile
+    match /users/{userId} {
+      allow get, list: if isSignedIn();
+      allow create: if isOwner(userId) && isValidUser(incoming());
+      allow update: if isOwner(userId) && isValidUser(incoming());
+      allow delete: if isOwner(userId);
+
+      // Subcollection for Swipes
+      match /swipes/{swipeId} {
+        allow get, list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidSwipe(incoming()) && incoming().swiperId == request.auth.uid;
+        allow update: if isOwner(userId) && isValidSwipe(incoming()) && incoming().swiperId == request.auth.uid;
+        allow delete: if isOwner(userId);
+      }
+
+      // Subcollection for Transactions
+      match /transactions/{transactionId} {
+        allow get, list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidTransaction(incoming()) && incoming().userId == request.auth.uid;
+      }
+
+      // Subcollection for Favorites
+      match /favorites/{favoriteId} {
+        allow get, list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidFavorite(incoming()) && incoming().userId == request.auth.uid;
+        allow delete: if isOwner(userId);
+      }
+
+      // Subcollection for Notifications
+      match /notifications/{notificationId} {
+        allow get, list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidNotification(incoming()) && incoming().userId == request.auth.uid;
+        allow update: if isOwner(userId) && isValidNotification(incoming()) && incoming().userId == request.auth.uid;
+        allow delete: if isOwner(userId);
+      }
+    }
+
+    // Rules for Matches
+    match /matches/{matchId} {
+      allow get, list: if isSignedIn() && (resource == null || request.auth.uid in resource.data.users);
+      allow create: if isSignedIn() && isValidMatch(incoming()) && request.auth.uid in incoming().users;
+      allow update: if isSignedIn() && request.auth.uid in existing().users && isValidMatch(incoming()) && request.auth.uid in incoming().users;
+      allow delete: if isSignedIn() && request.auth.uid in existing().users;
+
+      // Subcollection for Messages
+      match /messages/{messageId} {
+        allow get, list: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/matches/$(matchId)).data.users;
+        allow create: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/matches/$(matchId)).data.users && isValidMessage(incoming()) && incoming().senderId == request.auth.uid;
+        allow update: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/matches/$(matchId)).data.users && isValidMessage(incoming()) && incoming().senderId == request.auth.uid;
+        allow delete: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/matches/$(matchId)).data.users;
+      }
+    }
+  }
+}

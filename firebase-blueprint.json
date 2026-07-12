@@ -1,0 +1,152 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "TrueMatch AI User Profile",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "age": { "type": "integer" },
+        "gender": { "type": "string" },
+        "bio": { "type": "string" },
+        "images": { "type": "array" },
+        "distance": { "type": "number" },
+        "verified": { "type": "boolean" },
+        "interests": { "type": "array" },
+        "compatibility": { "type": "number" },
+        "isOnline": { "type": "boolean" },
+        "jobTitle": { "type": "string" },
+        "company": { "type": "string" },
+        "education": { "type": "string" },
+        "relationshipStatus": { "type": "string" },
+        "city": { "type": "string" },
+        "intent": { "type": "string" },
+        "lifestyle": { "type": "array" },
+        "smoking": { "type": "string" },
+        "drinking": { "type": "string" },
+        "pets": { "type": "string" },
+        "zodiac": { "type": "string" },
+        "children": { "type": "string" },
+        "religion": { "type": "string" },
+        "personality": { "type": "string" },
+        "isGold": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "name", "gender"]
+    },
+    "Swipe": {
+      "title": "Swipe",
+      "description": "User swipe actions on other profiles",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "swiperId": { "type": "string" },
+        "swipedId": { "type": "string" },
+        "direction": { "type": "string", "enum": ["left", "right", "up"] },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["swiperId", "swipedId", "direction"]
+    },
+    "Match": {
+      "title": "Match",
+      "description": "Confirmed match between two users",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "users": { "type": "array" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["id", "users"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "A chat message",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "senderId": { "type": "string" },
+        "text": { "type": "string" },
+        "audioUrl": { "type": "string" },
+        "audioDuration": { "type": "integer" },
+        "timestamp": { "type": "string" },
+        "isRead": { "type": "boolean" }
+      },
+      "required": ["id", "senderId", "timestamp"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "User subscription payment transactions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "planName": { "type": "string" },
+        "price": { "type": "string" },
+        "paymentMethod": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "userId", "planName", "price", "paymentMethod", "timestamp", "status"]
+    },
+    "Favorite": {
+      "title": "Favorite",
+      "description": "Users favorited by another user",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "favoritedId": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["id", "userId", "favoritedId", "timestamp"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "User in-app notifications",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "type": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "isRead": { "type": "boolean" },
+        "image": { "type": "string" }
+      },
+      "required": ["id", "userId", "type", "title", "message", "timestamp", "isRead"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Stores user profiles"
+    },
+    "/users/{userId}/swipes/{swipeId}": {
+      "schema": "Swipe",
+      "description": "Stores user swipe history"
+    },
+    "/users/{userId}/favorites/{favoriteId}": {
+      "schema": "Favorite",
+      "description": "Stores user favorited profiles"
+    },
+    "/users/{userId}/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "Stores user notification history"
+    },
+    "/users/{userId}/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Stores user payment transaction history"
+    },
+    "/matches/{matchId}": {
+      "schema": "Match",
+      "description": "Stores active matches"
+    },
+    "/matches/{matchId}/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Stores chat messages for a match"
+    }
+  }
+}

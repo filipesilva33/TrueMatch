@@ -1,0 +1,6 @@
+{
+  "name": "TrueMatch AI",
+  "description": "Ultra-robust AI-powered dating and friendship native app prototype with verification and matching.",
+  "requestFramePermissions": ["camera", "geolocation", "microphone", "display-capture", "clipboard-read", "clipboard-write", "contacts"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
