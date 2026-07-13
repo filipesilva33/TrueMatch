@@ -74,7 +74,7 @@ export default function MobileLayout() {
                           "absolute w-12 h-12 rounded-full blur-[12px] -z-10",
                           "bg-gradient-to-tr from-pink-500/15 to-purple-500/15"
                         )}
-                        transition={{ duration: 0.15 }}
+                        transition={{ duration: 0.1 }}
                       />
                     )}
 
@@ -84,7 +84,7 @@ export default function MobileLayout() {
                         initial={{ scaleX: 0 }}
                         animate={{ scaleX: 1 }}
                         className="absolute bottom-1 w-6 h-[3px] bg-gradient-to-r from-pink-500 via-rose-400 to-purple-600 rounded-full shadow-[0_1px_10px_rgba(236,72,153,0.8),0_0_15px_rgba(168,85,247,0.5)]"
-                        transition={{ duration: 0.15 }}
+                        transition={{ duration: 0.1 }}
                       />
                     )}
 
@@ -92,14 +92,14 @@ export default function MobileLayout() {
                     <motion.div
                       animate={{
                         y: isActive ? -4 : 0,
-                        scale: isActive ? 1.12 : 1,
+                        scale: isActive ? 1.1 : 1,
                       }}
-                      transition={{ duration: 0.15, ease: "easeOut" }}
+                      transition={{ duration: 0.12, ease: "easeOut" }}
                       className="relative flex items-center justify-center mb-1 z-10"
                     >
                       <item.icon
                         className={cn(
-                          "w-[20px] h-[20px] transition-colors duration-200",
+                          "w-[20px] h-[20px] transition-colors duration-100",
                           isActive 
                             ? "text-pink-500 drop-shadow-[0_0_8px_rgba(236,72,153,0.6)]" 
                             : "text-zinc-500 group-hover:text-zinc-300"
@@ -115,9 +115,9 @@ export default function MobileLayout() {
                         opacity: isActive ? 1 : 0.6,
                         y: isActive ? -1 : 0
                       }}
-                      transition={{ duration: 0.15, ease: "easeOut" }}
+                      transition={{ duration: 0.12, ease: "easeOut" }}
                       className={cn(
-                        "text-[9px] font-extrabold uppercase tracking-widest transition-colors duration-200 z-10 select-none",
+                        "text-[9px] font-extrabold uppercase tracking-widest transition-colors duration-100 z-10 select-none",
                         isActive 
                           ? "text-white"
                           : "text-zinc-500 group-hover:text-zinc-400"
