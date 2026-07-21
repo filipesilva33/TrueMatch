@@ -1,20 +1,24 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, Bell, MoreVertical, Send, Crown, Play, Tv, CheckCircle2, Volume2, Lock, X, Sparkles, Zap, Mic, Trash2, UserMinus, ShieldAlert, AlertTriangle } from 'lucide-react';
+import { Search, Bell, MoreVertical, Send, Crown, Play, Tv, CheckCircle2, Volume2, VolumeX, Lock, X, Sparkles, Zap, Mic, Trash2, UserMinus, ShieldAlert, AlertTriangle, User, Eraser, Smile, MapPin, Heart, Briefcase } from 'lucide-react';
+import EmojiPicker, { Theme, EmojiStyle } from 'emoji-picker-react';
 import { mockUsers, mockChats } from '../data/mock';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '../lib/utils';
 import { useNotifications } from '../hooks/useNotifications';
 import { playUiSound } from '../utils/audio';
-import { getSystemSetting } from '../utils/privacy';
+import { getSystemSetting, getPrivacySetting } from '../utils/privacy';
 import { auth, db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { doc, getDoc, setDoc, collection, onSnapshot, query, orderBy, limit, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, onSnapshot, query, orderBy, limit, serverTimestamp, deleteDoc, getDocs } from 'firebase/firestore';
+import { curatedGifs, curatedStickers } from '../data/gifsAndStickers';
 
 type Message = {
   id: string;
   text?: string;
   audioUrl?: string;
   audioDuration?: number;
+  gifUrl?: string;
+  stickerUrl?: string;
   isMe: boolean;
 };
 
@@ -23,6 +27,23 @@ function formatTime(seconds: number) {
   const secs = seconds % 60;
   return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
 }
+
+const getEmojiInfo = (text?: string) => {
+  if (!text) return { isOnly: false, count: 0 };
+  const trimmed = text.trim();
+  if (!trimmed) return { isOnly: false, count: 0 };
+  
+  // Regex to check if the text is strictly emojis and whitespace / separators
+  const emojiRegex = /^[\s\p{Emoji}\p{Emoji_Modifier}\p{Emoji_Component}\p{Emoji_Presentation}\u200d\ufe0f]+$/u;
+  const hasLettersOrNumbers = /[a-zA-Z0-9\u00C0-\u00FF]/.test(trimmed);
+  
+  const isOnly = emojiRegex.test(trimmed) && !hasLettersOrNumbers;
+  if (!isOnly) return { isOnly: false, count: 0 };
+  
+  // Use Array.from to correctly handle multi-byte emoji characters
+  const emojis = Array.from(trimmed).filter(char => char.trim() !== "");
+  return { isOnly, count: emojis.length };
+};
 
 function AudioPlayerMessage({ url, duration, isMe }: { url: string; duration: number; isMe: boolean }) {
   const [isPlaying, setIsPlaying] = useState(false);
@@ -208,6 +229,10 @@ export default function ChatPage() {
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [chats, setChats] = useState(mockChats);
+  const [mutedChats, setMutedChats] = useState<string[]>(() => {
+    const stored = localStorage.getItem('truematch_muted_chats');
+    return stored ? JSON.parse(stored) : [];
+  });
   const [messages, setMessages] = useState<Record<string, Message[]>>({
     "c1": [
       { id: "m1", text: "Ei! Vi que você curte indie rock. Já ouviu o álbum novo?", isMe: true },
@@ -251,20 +276,105 @@ export default function ChatPage() {
 
   // Voice recording states and refs
   const [isRecording, setIsRecording] = useState(false);
+  const [isRecordingLocked, setIsRecordingLocked] = useState(false);
+  const [audioData, setAudioData] = useState<number[]>(new Array(25).fill(3));
+  const startYRef = useRef<number | null>(null);
+  const startXRef = useRef<number | null>(null);
+  const [dragOffset, setDragOffset] = useState(0);
+  const [dragXOffset, setDragXOffset] = useState(0);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const dataArrayRef = useRef<Uint8Array | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+
   const [recordingTime, setRecordingTime] = useState(0);
   const recordingTimeRef = useRef<number>(0);
   const [isSimulated, setIsSimulated] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Emoji state
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [pickerTab, setPickerTab] = useState<'emoji' | 'gif' | 'sticker'>('emoji');
+  const [mediaSearchQuery, setMediaSearchQuery] = useState("");
+
+  // Giphy API integration states
+  const [giphyGifs, setGiphyGifs] = useState<any[]>([]);
+  const [giphyStickers, setGiphyStickers] = useState<any[]>([]);
+  const [loadingMedia, setLoadingMedia] = useState(false);
+  const [mediaError, setMediaError] = useState(false);
+
+  // Search/trending Giphy effect
+  useEffect(() => {
+    if (!showEmojiPicker) return;
+    if (pickerTab !== 'gif' && pickerTab !== 'sticker') return;
+
+    setLoadingMedia(true);
+    setMediaError(false);
+
+    const isGif = pickerTab === 'gif';
+    const queryStr = mediaSearchQuery.trim();
+    const apiKey = "dc6zaTOxFJmzC"; // Public Giphy Beta key
+
+    const timer = setTimeout(() => {
+      let url = "";
+      if (isGif) {
+        if (queryStr) {
+          url = `https://api.giphy.com/v1/gifs/search?api_key=${apiKey}&q=${encodeURIComponent(queryStr)}&limit=30&rating=g`;
+        } else {
+          url = `https://api.giphy.com/v1/gifs/trending?api_key=${apiKey}&limit=30&rating=g`;
+        }
+      } else {
+        if (queryStr) {
+          url = `https://api.giphy.com/v1/stickers/search?api_key=${apiKey}&q=${encodeURIComponent(queryStr)}&limit=30&rating=g`;
+        } else {
+          url = `https://api.giphy.com/v1/stickers/trending?api_key=${apiKey}&limit=30&rating=g`;
+        }
+      }
+
+      fetch(url)
+        .then(res => {
+          if (!res.ok) throw new Error("Giphy API error");
+          return res.json();
+        })
+        .then(json => {
+          if (json && json.data) {
+            const formatted = json.data.map((item: any) => ({
+              id: item.id,
+              url: item.images?.fixed_height?.url || item.images?.original?.url || "",
+              originalUrl: item.images?.original?.url || item.images?.fixed_height?.url || "",
+              title: item.title || "",
+            })).filter((item: any) => item.url !== "");
+
+            if (isGif) {
+              setGiphyGifs(formatted);
+            } else {
+              setGiphyStickers(formatted);
+            }
+          }
+          setLoadingMedia(false);
+        })
+        .catch(err => {
+          console.error("Failed to fetch from Giphy:", err);
+          setMediaError(true);
+          setLoadingMedia(false);
+        });
+    }, queryStr ? 400 : 0);
+
+    return () => clearTimeout(timer);
+  }, [pickerTab, mediaSearchQuery, showEmojiPicker]);
 
   // Safety report and block states
   const [reportBlockUser, setReportBlockUser] = useState<any | null>(null);
   const [showOptionsModal, setShowOptionsModal] = useState(false);
+  const [showUserProfileModal, setShowUserProfileModal] = useState(false);
   const [showReportReasonModal, setShowReportReasonModal] = useState(false);
   const [showBlockConfirmModal, setShowBlockConfirmModal] = useState(false);
   const [reportReason, setReportReason] = useState("");
   const [showReportSuccess, setShowReportSuccess] = useState(false);
+  const [showMuteStatusModal, setShowMuteStatusModal] = useState(false);
+  const [muteStatusActive, setMuteStatusActive] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const [blockedUserIds, setBlockedUserIds] = useState<string[]>(() => {
@@ -295,6 +405,8 @@ export default function ChatPage() {
           text: data.text,
           audioUrl: data.audioUrl,
           audioDuration: data.audioDuration,
+          gifUrl: data.gifUrl,
+          stickerUrl: data.stickerUrl,
           isMe: data.senderId === auth.currentUser?.uid
         });
       });
@@ -351,6 +463,42 @@ export default function ChatPage() {
         mediaRecorderRef.current = recorder;
         audioChunksRef.current = [];
 
+        // Setup audio visualizer
+        try {
+          const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+          const audioContext = new AudioContext();
+          audioContextRef.current = audioContext;
+          
+          const analyser = audioContext.createAnalyser();
+          analyser.fftSize = 64;
+          analyserRef.current = analyser;
+          
+          const source = audioContext.createMediaStreamSource(stream);
+          source.connect(analyser);
+          
+          const bufferLength = analyser.frequencyBinCount;
+          const dataArray = new Uint8Array(bufferLength);
+          dataArrayRef.current = dataArray;
+          
+          const updateWaveform = () => {
+            if (!analyserRef.current || !dataArrayRef.current) return;
+            analyserRef.current.getByteFrequencyData(dataArrayRef.current);
+            
+            const bars = 25;
+            const step = Math.floor(dataArrayRef.current.length / bars);
+            const newAudioData = [];
+            for (let i = 0; i < bars; i++) {
+              const value = dataArrayRef.current[i * step];
+              newAudioData.push(Math.max(3, (value / 255) * 24));
+            }
+            setAudioData(newAudioData);
+            animationFrameRef.current = requestAnimationFrame(updateWaveform);
+          };
+          updateWaveform();
+        } catch (e) {
+          console.warn("Could not start audio visualizer", e);
+        }
+
         recorder.ondataavailable = (e) => {
           if (e.data.size > 0) {
             audioChunksRef.current.push(e.data);
@@ -405,9 +553,17 @@ export default function ChatPage() {
   const stopRecordingAndSend = () => {
     if (!isRecording) return;
     
+    // If it's less than a second, cancel instead of sending
+    if (recordingTimeRef.current < 1) {
+      cancelRecording();
+      setToastMessage("Segure para gravar");
+      setTimeout(() => setToastMessage(null), 2000);
+      return;
+    }
+    
     if (isSimulated) {
       const silentAudioUrl = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
-      const duration = recordingTimeRef.current > 0 ? recordingTimeRef.current : 1;
+      const duration = recordingTimeRef.current;
       sendAudioMessage(silentAudioUrl, duration);
       cleanupRecording();
     } else {
@@ -438,13 +594,79 @@ export default function ChatPage() {
 
   const cleanupRecording = () => {
     setIsRecording(false);
+    setIsRecordingLocked(false);
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = null;
     }
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
     mediaRecorderRef.current = null;
     audioChunksRef.current = [];
+    setAudioData(new Array(25).fill(3));
   };
+
+  const lockThreshold = -50; // pixels to swipe up
+  const cancelThreshold = -80; // pixels to swipe left
+
+  useEffect(() => {
+    const handleGlobalPointerMove = (e: PointerEvent) => {
+      if (!isRecording || isRecordingLocked || startYRef.current === null || startXRef.current === null) return;
+      const y = e.clientY;
+      const x = e.clientX;
+      const yOffset = y - startYRef.current;
+      const xOffset = x - startXRef.current;
+      
+      setDragOffset(Math.min(0, yOffset));
+      setDragXOffset(Math.min(0, xOffset));
+      
+      if (xOffset < cancelThreshold) {
+        cancelRecording();
+        startYRef.current = null;
+        startXRef.current = null;
+        setDragOffset(0);
+        setDragXOffset(0);
+        return;
+      }
+      
+      if (yOffset < lockThreshold && Math.abs(yOffset) > Math.abs(xOffset)) {
+        setIsRecordingLocked(true);
+        startYRef.current = null;
+        startXRef.current = null;
+        setDragOffset(0);
+        setDragXOffset(0);
+      }
+    };
+
+    const handleGlobalPointerUp = (e: PointerEvent) => {
+      if (!isRecording || startYRef.current === null) return;
+      if (!isRecordingLocked) {
+        stopRecordingAndSend();
+      }
+      startYRef.current = null;
+      startXRef.current = null;
+      setDragOffset(0);
+      setDragXOffset(0);
+    };
+
+    if (isRecording && !isRecordingLocked) {
+      window.addEventListener('pointermove', handleGlobalPointerMove);
+      window.addEventListener('pointerup', handleGlobalPointerUp);
+      window.addEventListener('pointercancel', handleGlobalPointerUp);
+    }
+
+    return () => {
+      window.removeEventListener('pointermove', handleGlobalPointerMove);
+      window.removeEventListener('pointerup', handleGlobalPointerUp);
+      window.removeEventListener('pointercancel', handleGlobalPointerUp);
+    };
+  }, [isRecording, isRecordingLocked]);
 
   const sendAudioMessage = (url: string, duration: number) => {
     if (!activeChatId) return;
@@ -539,6 +761,260 @@ export default function ChatPage() {
     }, 1500);
   };
 
+  const sendGifMessage = (gifUrl: string) => {
+    if (!activeChatId) return;
+
+    if (!isGold) {
+      const currentCount = parseInt(localStorage.getItem('truematch_sent_messages_count') || '0', 10);
+      if (currentCount >= 3) {
+        setShowAdPromoModal(true);
+        return;
+      }
+    }
+
+    const currentId = activeChatId;
+    const newMessageId = Date.now().toString();
+    const newMessage: Message = { 
+      id: newMessageId, 
+      gifUrl,
+      isMe: true 
+    };
+
+    if (!isGold) {
+      const currentCount = parseInt(localStorage.getItem('truematch_sent_messages_count') || '0', 10);
+      const newCount = currentCount + 1;
+      localStorage.setItem('truematch_sent_messages_count', newCount.toString());
+      setSentMessagesCount(newCount);
+    }
+
+    playUiSound('message_sent');
+
+    setMessages(prev => ({
+      ...prev,
+      [currentId]: [...(prev[currentId] || []), newMessage]
+    }));
+
+    setChats(prev => prev.map(chat => 
+      chat.id === currentId 
+        ? { ...chat, lastMessage: "🎬 GIF", time: 'Agora', unread: 0 } 
+        : chat
+    ));
+
+    const chat = chats.find(c => c.id === currentId);
+    const matchedUser = mockUsers.find(u => u.id === chat?.userId);
+    const aiText = `Haha, que GIF ótimo! 😂 Adorei. Onde você achou?`;
+
+    const user = auth.currentUser;
+    if (user) {
+      const dbMessage = {
+        id: newMessageId,
+        senderId: user.uid,
+        gifUrl,
+        timestamp: new Date().toISOString()
+      };
+      setDoc(doc(db, "matches", currentId, "messages", newMessageId), dbMessage)
+        .catch(err => {
+          handleFirestoreError(err, OperationType.WRITE, `matches/${currentId}/messages/${newMessageId}`);
+        });
+
+      setTimeout(() => {
+        const aiMessageId = (Date.now() + 1).toString();
+        const dbAiMessage = {
+          id: aiMessageId,
+          senderId: "ai-system",
+          text: aiText,
+          timestamp: new Date().toISOString()
+        };
+        setDoc(doc(db, "matches", currentId, "messages", aiMessageId), dbAiMessage)
+          .catch(err => {
+            console.error("Error saving AI response to Firestore:", err);
+          });
+      }, 1500);
+    }
+
+    setTimeout(() => {
+      const aiResponse = { 
+         id: (Date.now() + 1).toString(), 
+         text: aiText,
+         isMe: false 
+      };
+      
+      playUiSound('message_received');
+      if (getSystemSetting('push') && 'Notification' in window && Notification.permission === 'granted') {
+        new Notification(`Nova mensagem de ${matchedUser?.name || "Match"}`, {
+          body: aiText,
+          icon: matchedUser?.images?.[0] || '/favicon.ico'
+        });
+      }
+
+      setMessages(prev => ({
+        ...prev,
+        [currentId]: [...(prev[currentId] || []), aiResponse]
+      }));
+
+      setChats(prev => prev.map(c => 
+        c.id === currentId 
+          ? { ...c, lastMessage: aiText, time: 'Agora', unread: activeChatId === currentId ? 0 : (c.unread + 1) } 
+          : c
+      ));
+    }, 1500);
+  };
+
+  const sendStickerMessage = (stickerUrl: string) => {
+    if (!activeChatId) return;
+
+    if (!isGold) {
+      const currentCount = parseInt(localStorage.getItem('truematch_sent_messages_count') || '0', 10);
+      if (currentCount >= 3) {
+        setShowAdPromoModal(true);
+        return;
+      }
+    }
+
+    const currentId = activeChatId;
+    const newMessageId = Date.now().toString();
+    const newMessage: Message = { 
+      id: newMessageId, 
+      stickerUrl,
+      isMe: true 
+    };
+
+    if (!isGold) {
+      const currentCount = parseInt(localStorage.getItem('truematch_sent_messages_count') || '0', 10);
+      const newCount = currentCount + 1;
+      localStorage.setItem('truematch_sent_messages_count', newCount.toString());
+      setSentMessagesCount(newCount);
+    }
+
+    playUiSound('message_sent');
+
+    setMessages(prev => ({
+      ...prev,
+      [currentId]: [...(prev[currentId] || []), newMessage]
+    }));
+
+    setChats(prev => prev.map(chat => 
+      chat.id === currentId 
+        ? { ...chat, lastMessage: "🖼️ Figurinha", time: 'Agora', unread: 0 } 
+        : chat
+    ));
+
+    const chat = chats.find(c => c.id === currentId);
+    const matchedUser = mockUsers.find(u => u.id === chat?.userId);
+    const aiText = `Que sticker fofo! 😍 Também tenho vários desses salvos.`;
+
+    const user = auth.currentUser;
+    if (user) {
+      const dbMessage = {
+        id: newMessageId,
+        senderId: user.uid,
+        stickerUrl,
+        timestamp: new Date().toISOString()
+      };
+      setDoc(doc(db, "matches", currentId, "messages", newMessageId), dbMessage)
+        .catch(err => {
+          handleFirestoreError(err, OperationType.WRITE, `matches/${currentId}/messages/${newMessageId}`);
+        });
+
+      setTimeout(() => {
+        const aiMessageId = (Date.now() + 1).toString();
+        const dbAiMessage = {
+          id: aiMessageId,
+          senderId: "ai-system",
+          text: aiText,
+          timestamp: new Date().toISOString()
+        };
+        setDoc(doc(db, "matches", currentId, "messages", aiMessageId), dbAiMessage)
+          .catch(err => {
+            console.error("Error saving AI response to Firestore:", err);
+          });
+      }, 1500);
+    }
+
+    setTimeout(() => {
+      const aiResponse = { 
+         id: (Date.now() + 1).toString(), 
+         text: aiText,
+         isMe: false 
+      };
+      
+      playUiSound('message_received');
+      if (getSystemSetting('push') && 'Notification' in window && Notification.permission === 'granted') {
+        new Notification(`Nova mensagem de ${matchedUser?.name || "Match"}`, {
+          body: aiText,
+          icon: matchedUser?.images?.[0] || '/favicon.ico'
+        });
+      }
+
+      setMessages(prev => ({
+        ...prev,
+        [currentId]: [...(prev[currentId] || []), aiResponse]
+      }));
+
+      setChats(prev => prev.map(c => 
+        c.id === currentId 
+          ? { ...c, lastMessage: aiText, time: 'Agora', unread: activeChatId === currentId ? 0 : (c.unread + 1) } 
+          : c
+      ));
+    }, 1500);
+  };
+
+  const handleClearChat = async (chatId: string) => {
+    try {
+      const q = query(collection(db, "matches", chatId, "messages"));
+      const snapshot = await getDocs(q);
+      const deletePromises = snapshot.docs.map(docSnap => deleteDoc(docSnap.ref));
+      await Promise.all(deletePromises);
+      
+      setMessages(prev => ({ ...prev, [chatId]: [] }));
+      setChats(prev => prev.map(c => c.id === chatId ? { ...c, lastMessage: "" } : c));
+      
+      setToastMessage("Conversa limpa com sucesso.");
+      setTimeout(() => setToastMessage(null), 3000);
+    } catch (e) {
+      console.error("Error clearing chat", e);
+      setToastMessage("Erro ao limpar conversa.");
+      setTimeout(() => setToastMessage(null), 3000);
+    }
+  };
+
+  const handleDeleteChat = async (chatId: string) => {
+    try {
+      const q = query(collection(db, "matches", chatId, "messages"));
+      const snapshot = await getDocs(q);
+      const deletePromises = snapshot.docs.map(docSnap => deleteDoc(docSnap.ref));
+      await Promise.all(deletePromises);
+      
+      setMessages(prev => {
+        const newMsgs = { ...prev };
+        delete newMsgs[chatId];
+        return newMsgs;
+      });
+      setChats(prev => prev.filter(c => c.id !== chatId));
+      setActiveChatId(null);
+      
+      setToastMessage("Conversa apagada com sucesso.");
+      setTimeout(() => setToastMessage(null), 3000);
+    } catch (e) {
+      console.error("Error deleting chat", e);
+      setToastMessage("Erro ao apagar conversa.");
+      setTimeout(() => setToastMessage(null), 3000);
+    }
+  };
+
+  const toggleMuteChat = (chatId: string) => {
+    setMutedChats(prev => {
+      const isMuted = prev.includes(chatId);
+      const newMuted = isMuted ? prev.filter(id => id !== chatId) : [...prev, chatId];
+      localStorage.setItem('truematch_muted_chats', JSON.stringify(newMuted));
+      
+      setMuteStatusActive(!isMuted);
+      setShowMuteStatusModal(true);
+      
+      return newMuted;
+    });
+  };
+
   const handleBlockUser = (userId: string) => {
     const newBlocked = [...blockedUserIds, userId];
     setBlockedUserIds(newBlocked);
@@ -590,7 +1066,8 @@ export default function ChatPage() {
           userId: state.userId!,
           lastMessage: "Novo Match!",
           time: "Agora",
-          unread: 0
+          unread: 0,
+          hasStory: false
         }, ...prev]);
         setMessages(prev => ({ ...prev, [newChatId]: [
           { id: "m_init", text: "Oi! Tudo bem? Vi seu perfil e achei super interessante. :)", isMe: false }
@@ -869,64 +1346,228 @@ export default function ChatPage() {
           </motion.div>
         )}
 
-        {/* Safety Options Modal */}
+        {/* Full Profile View Modal */}
+        {showUserProfileModal && reportBlockUser && (
+          <motion.div
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
+            transition={{ type: "spring", stiffness: 300, damping: 30, mass: 0.8 }}
+            className={cn(
+              "absolute inset-0 z-[160] overflow-hidden transition-colors duration-300",
+              "bg-zinc-950"
+            )}
+          >
+            <div className="absolute inset-0 overflow-y-auto hide-scrollbar">
+              <button 
+                onClick={() => setShowUserProfileModal(false)}
+                className="absolute top-4 right-4 z-10 w-12 h-12 bg-black/40 backdrop-blur-md rounded-full flex items-center justify-center text-white hover:bg-black/60 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+
+              <div className="relative h-[65vh] w-full">
+                <img 
+                  src={reportBlockUser.images[0]} 
+                  alt={reportBlockUser.name} 
+                  referrerPolicy="no-referrer"
+                  className="w-full h-full object-cover"
+                />
+                <div className={cn(
+                  "absolute inset-0 bg-gradient-to-t via-transparent to-transparent transition-all duration-300",
+                  "from-zinc-950"
+                )} />
+                
+                <div className="absolute bottom-0 inset-x-0 p-6 flex flex-col justify-end">
+                  <div className="mb-3 inline-flex bg-gradient-to-r from-purple-500/80 to-pink-500/80 backdrop-blur-md px-3 py-1.5 rounded-full items-center max-w-fit border border-white/20">
+                    <Zap className="w-3.5 h-3.5 text-white mr-1.5 fill-current" />
+                    <span className="text-xs font-semibold uppercase tracking-wider text-white">Match IA: {reportBlockUser.compatibility}%</span>
+                  </div>
+                  <div className="flex items-center space-x-2 flex-wrap">
+                    <h2 className={cn(
+                      "text-5xl font-bold tracking-tight transition-colors duration-300",
+                      "text-white"
+                    )}>{reportBlockUser.name}</h2>
+                    <span className={cn(
+                      "text-4xl font-light transition-colors duration-300",
+                      "text-white/80"
+                    )}>{reportBlockUser.age}</span>
+                    <div className="flex items-center space-x-1.5 mt-1">
+                      {reportBlockUser.verified && <CheckCircle2 className="w-8 h-8 text-blue-400 fill-blue-400/20" />}
+                      {reportBlockUser.popular && <Heart className="w-7 h-7 text-pink-400 fill-pink-400/20" />}
+                      <span className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-bold backdrop-blur-md ${
+                        reportBlockUser.isOnline 
+                          ? 'bg-green-500/20 text-green-400 border border-green-500/30' 
+                          : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                      }`}>
+                        <span className="relative flex h-2 w-2">
+                          {reportBlockUser.isOnline && (
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                          )}
+                          <span className={`relative inline-flex rounded-full h-2 w-2 ${reportBlockUser.isOnline ? 'bg-green-500' : 'bg-red-500'}`}></span>
+                        </span>
+                        <span>{reportBlockUser.isOnline ? 'Online' : 'Offline'}</span>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-6 space-y-8">
+                {/* Info Grid */}
+                <section>
+                  <div className="grid grid-cols-2 gap-3 mb-6">
+                    {reportBlockUser.city && (
+                      <div className={cn(
+                        "p-4 rounded-[1.25rem] border flex flex-col justify-center transition-all duration-300",
+                        "bg-zinc-900/60 border-white/5"
+                      )}>
+                        <MapPin className="w-6 h-6 text-pink-400 mb-2" />
+                        <span className={cn("text-[15px] font-semibold leading-tight transition-colors duration-300", "text-white")}>{reportBlockUser.city}</span>
+                        <span className="text-[13px] text-zinc-500 mt-0.5">
+                          {getPrivacySetting('hide_dist') ? 'Distância Ocultada' : `${reportBlockUser.distance} km de distância`}
+                        </span>
+                      </div>
+                    )}
+                    {reportBlockUser.jobTitle && (
+                      <div className={cn(
+                        "p-4 rounded-[1.25rem] border flex flex-col justify-center transition-all duration-300",
+                        "bg-zinc-900/60 border-white/5"
+                      )}>
+                        <Briefcase className="w-6 h-6 text-blue-400 mb-2" />
+                        <span className={cn("text-[15px] font-semibold leading-tight transition-colors duration-300", "text-white")}>
+                          {reportBlockUser.jobTitle}{reportBlockUser.company ? ` na ${reportBlockUser.company}` : ''}
+                        </span>
+                        <span className="text-[13px] text-zinc-500 mt-0.5">Profissão</span>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <h3 className={cn(
+                    "text-[18px] font-bold mb-3 pb-2 border-b transition-colors duration-300",
+                    "text-white border-white/10"
+                  )}>Sobre mim</h3>
+                  <p className={cn(
+                    "text-[16px] leading-relaxed font-normal transition-colors duration-300",
+                    "text-zinc-300 whitespace-pre-wrap"
+                  )}>
+                    {reportBlockUser.bio}
+                  </p>
+                </section>
+
+                {/* Interests */}
+                {reportBlockUser.interests && reportBlockUser.interests.length > 0 && (
+                  <section>
+                    <h3 className={cn(
+                      "text-lg font-bold mb-3 pb-2 border-b transition-colors duration-300",
+                      "text-white border-white/10"
+                    )}>Interesses</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {reportBlockUser.interests.map((interest: string, idx: number) => (
+                        <span key={idx} className={cn(
+                          "px-4 py-2 rounded-full border transition-all duration-300 text-[14px] font-semibold",
+                          "border-pink-500/30 bg-pink-500/10 text-pink-300"
+                        )}>
+                          {interest}
+                        </span>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {/* More Photos */}
+                {reportBlockUser.images && reportBlockUser.images.length > 1 && (
+                  <section className="space-y-4 pb-12">
+                    <h3 className={cn(
+                      "text-lg font-bold mb-3 pb-2 border-b transition-colors duration-300",
+                      "text-white border-white/10"
+                    )}>Galeria</h3>
+                    {reportBlockUser.images.slice(1).map((img: string, idx: number) => (
+                      <img key={idx} src={img} decoding="async" loading="lazy" referrerPolicy="no-referrer" className="w-full aspect-[4/5] object-cover rounded-[2rem] shadow-lg" />
+                    ))}
+                  </section>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Chat Options Modal (WhatsApp Style) */}
         {showOptionsModal && reportBlockUser && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[160] bg-black/80 backdrop-blur-md flex items-center justify-center p-4"
+            className="fixed inset-0 z-[160] bg-transparent"
             onClick={() => setShowOptionsModal(false)}
           >
             <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
+              initial={{ scale: 0.9, opacity: 0, y: -20, x: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0, x: 0 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="w-full max-w-sm bg-zinc-900 border border-white/5 rounded-3xl p-6 text-center text-white"
+              style={{ transformOrigin: "top right" }}
+              className="absolute top-16 right-4 w-52 bg-zinc-900 border border-white/10 rounded-xl shadow-2xl py-2 z-[170]"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="w-12 h-12 bg-zinc-800 rounded-full flex items-center justify-center mx-auto mb-4 border border-white/5">
-                <ShieldAlert className="w-6 h-6 text-pink-500" />
-              </div>
-              <h3 className="text-lg font-bold mb-1">Ações de Segurança</h3>
-              <p className="text-xs text-zinc-400 mb-6">Selecione uma ação para {reportBlockUser.name}</p>
+              <button
+                onClick={() => {
+                  setShowOptionsModal(false);
+                  setShowUserProfileModal(true);
+                }}
+                className="w-full text-left px-4 py-2.5 text-[15px] text-zinc-200 hover:bg-white/5 transition-colors flex items-center gap-3"
+              >
+                Ver perfil
+              </button>
               
-              <div className="space-y-3">
-                <button
-                  onClick={() => {
-                    setShowOptionsModal(false);
-                    setShowReportReasonModal(true);
-                  }}
-                  className="w-full bg-zinc-800/80 hover:bg-zinc-800 border border-white/5 text-white font-bold py-3 px-4 rounded-xl text-sm flex items-center justify-between transition-colors active:scale-98"
-                >
-                  <span className="flex items-center gap-2 text-red-400">
-                    <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
-                    Denunciar usuário
-                  </span>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-500"><path d="m9 18 6-6-6-6"/></svg>
-                </button>
+              <button
+                onClick={() => {
+                  setShowOptionsModal(false);
+                  if (activeChatId) toggleMuteChat(activeChatId);
+                }}
+                className="w-full text-left px-4 py-2.5 text-[15px] text-zinc-200 hover:bg-white/5 transition-colors flex items-center gap-3"
+              >
+                {activeChatId && mutedChats.includes(activeChatId) ? "Não silenciar" : "Silenciar conversa"}
+              </button>
+              
+              <button
+                onClick={() => {
+                  setShowOptionsModal(false);
+                  if (activeChatId) handleClearChat(activeChatId);
+                }}
+                className="w-full text-left px-4 py-2.5 text-[15px] text-zinc-200 hover:bg-white/5 transition-colors flex items-center gap-3"
+              >
+                Limpar conversa
+              </button>
 
-                <button
-                  onClick={() => {
-                    setShowOptionsModal(false);
-                    setShowBlockConfirmModal(true);
-                  }}
-                  className="w-full bg-zinc-800/80 hover:bg-zinc-800 border border-white/5 text-white font-bold py-3 px-4 rounded-xl text-sm flex items-center justify-between transition-colors active:scale-98"
-                >
-                  <span className="flex items-center gap-2 text-zinc-300">
-                    <UserMinus className="w-4 h-4 text-zinc-400 shrink-0" />
-                    Bloquear usuário
-                  </span>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-500"><path d="m9 18 6-6-6-6"/></svg>
-                </button>
+              <button
+                onClick={() => {
+                  setShowOptionsModal(false);
+                  if (activeChatId) handleDeleteChat(activeChatId);
+                }}
+                className="w-full text-left px-4 py-2.5 text-[15px] text-zinc-200 hover:bg-white/5 transition-colors flex items-center gap-3"
+              >
+                Apagar conversa
+              </button>
 
-                <button
-                  onClick={() => setShowOptionsModal(false)}
-                  className="w-full bg-transparent hover:bg-white/5 text-zinc-400 font-bold py-2.5 rounded-xl text-xs uppercase tracking-wider transition-colors pt-4"
-                >
-                  Voltar
-                </button>
-              </div>
+              <button
+                onClick={() => {
+                  setShowOptionsModal(false);
+                  setShowReportReasonModal(true);
+                }}
+                className="w-full text-left px-4 py-2.5 text-[15px] text-zinc-200 hover:bg-white/5 transition-colors flex items-center gap-3"
+              >
+                Denunciar
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowOptionsModal(false);
+                  setShowBlockConfirmModal(true);
+                }}
+                className="w-full text-left px-4 py-2.5 text-[15px] text-zinc-200 hover:bg-white/5 transition-colors flex items-center gap-3"
+              >
+                Bloquear
+              </button>
             </motion.div>
           </motion.div>
         )}
@@ -1074,6 +1715,53 @@ export default function ChatPage() {
             </motion.div>
           </motion.div>
         )}
+
+        {/* Mute Status Modal */}
+        {showMuteStatusModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[160] bg-black/80 backdrop-blur-md flex items-center justify-center p-4"
+            onClick={() => setShowMuteStatusModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="w-full max-w-xs bg-zinc-900 border border-white/5 rounded-3xl p-6 text-center text-white"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4 ${
+                muteStatusActive ? 'bg-amber-500/10 text-amber-500' : 'bg-green-500/10 text-green-500'
+              }`}>
+                {muteStatusActive ? (
+                  <VolumeX className="w-6 h-6 animate-pulse" />
+                ) : (
+                  <Volume2 className="w-6 h-6" />
+                )}
+              </div>
+              <h3 className="text-lg font-bold mb-1">
+                {muteStatusActive ? "Silenciamento Ativado" : "Silenciamento Desativado"}
+              </h3>
+              <p className="text-xs text-zinc-400 mb-6 leading-relaxed">
+                {muteStatusActive 
+                  ? "As notificações desta conversa foram silenciadas com sucesso." 
+                  : "As notificações desta conversa foram reativadas."}
+              </p>
+
+              <button
+                onClick={() => {
+                  playUiSound('click');
+                  setShowMuteStatusModal(false);
+                }}
+                className="w-full bg-pink-500 hover:bg-pink-600 text-white font-bold py-2.5 rounded-xl text-xs uppercase tracking-wider transition-colors shadow-lg shadow-pink-500/10"
+              >
+                Entendi
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
       </AnimatePresence>
     );
   };
@@ -1083,8 +1771,11 @@ export default function ChatPage() {
   const filteredChats = chats.filter(chat => {
     if (blockedUserIds.includes(chat.userId)) return false;
     const user = mockUsers.find(u => u.id === chat.userId);
-    return user?.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-           chat.lastMessage.toLowerCase().includes(searchQuery.toLowerCase());
+    if (!user) return false;
+    const searchLower = searchQuery.toLowerCase().trim();
+    if (searchLower === '') return true;
+    const nameWords = user.name.toLowerCase().split(/\s+/);
+    return nameWords.some(word => word.startsWith(searchLower));
   });
 
   if (activeChatId) {
@@ -1135,7 +1826,7 @@ export default function ChatPage() {
           </div>
         </div>
 
-        <div className="flex-1 p-4 overflow-y-auto flex flex-col space-y-4 pt-6">
+        <div className="flex-1 p-4 overflow-y-auto hide-scrollbar flex flex-col space-y-4 pt-6">
            {messages[activeChatId]?.map(msg => (
              <motion.div 
                initial={{ opacity: 0, y: 10 }}
@@ -1143,18 +1834,57 @@ export default function ChatPage() {
                key={msg.id} 
                className={`flex ${msg.isMe ? "justify-end" : "justify-start"}`}
              >
-               <div className={cn(
-                 "px-4 py-2.5 max-w-[80%]",
-                 msg.isMe 
-                   ? "bg-gradient-to-r from-purple-500 to-pink-500 rounded-2xl rounded-tr-sm text-white shadow-lg shadow-pink-500/20" 
-                   : "bg-zinc-800 rounded-2xl rounded-tl-sm text-white"
-               )}>
-                 {msg.audioUrl ? (
-                   <AudioPlayerMessage url={msg.audioUrl} duration={msg.audioDuration || 0} isMe={msg.isMe} />
-                 ) : (
-                   <p className="text-[15px]">{msg.text}</p>
-                 )}
-               </div>
+               {msg.stickerUrl ? (
+                 <div className="relative group max-w-[130px] xs:max-w-[150px] p-1">
+                   <img 
+                     src={msg.stickerUrl} 
+                     alt="Figurinha" 
+                     className="w-full h-auto object-contain rounded-2xl select-none"
+                     referrerPolicy="no-referrer"
+                   />
+                 </div>
+               ) : msg.gifUrl ? (
+                 <div className={cn(
+                   "p-1 max-w-[200px] xs:max-w-[240px] overflow-hidden rounded-2xl shadow-xl border border-white/5 bg-zinc-900/90",
+                   msg.isMe ? "rounded-tr-sm" : "rounded-tl-sm"
+                 )}>
+                   <img 
+                     src={msg.gifUrl} 
+                     alt="GIF" 
+                     className="w-full h-auto object-contain rounded-xl select-none max-h-[180px] bg-[#121416]/50"
+                     referrerPolicy="no-referrer"
+                   />
+                 </div>
+               ) : (
+                 (() => {
+                   const { isOnly, count } = getEmojiInfo(msg.text);
+                   if (isOnly && count <= 3) {
+                     const sizeClass = count === 1 ? "text-5xl" : count === 2 ? "text-4xl" : "text-3xl";
+                     return (
+                       <div className={cn(
+                         "py-1 px-2 select-none select-all",
+                         msg.isMe ? "text-right" : "text-left"
+                       )}>
+                         <p className={cn("leading-none", sizeClass)}>{msg.text}</p>
+                       </div>
+                     );
+                   }
+                   return (
+                     <div className={cn(
+                       "px-4 py-2.5 max-w-[80%] break-words",
+                       msg.isMe 
+                         ? "bg-gradient-to-r from-purple-500 to-pink-500 rounded-2xl rounded-tr-sm text-white shadow-lg shadow-pink-500/20" 
+                         : "bg-zinc-800 rounded-2xl rounded-tl-sm text-white"
+                     )}>
+                       {msg.audioUrl ? (
+                         <AudioPlayerMessage url={msg.audioUrl} duration={msg.audioDuration || 0} isMe={msg.isMe} />
+                       ) : (
+                         <p className="text-[15px] leading-relaxed break-words whitespace-pre-wrap">{msg.text}</p>
+                       )}
+                     </div>
+                   );
+                 })()
+               )}
              </motion.div>
            ))}
            <div ref={messagesEndRef} />
@@ -1180,7 +1910,26 @@ export default function ChatPage() {
           "bg-zinc-950 border-white/5"
         )}>
           {isRecording ? (
-            <div className="h-14 rounded-2xl px-4 flex items-center justify-between bg-zinc-900 border border-red-500/30 shadow-lg shadow-red-500/10 transition-all duration-300 w-full">
+            <div className="h-14 rounded-2xl px-4 flex items-center justify-between bg-zinc-900 border border-red-500/30 shadow-lg shadow-red-500/10 transition-all duration-300 w-full relative">
+              {/* Drag to lock visualizer */}
+              {!isRecordingLocked && (
+                <>
+                  <div 
+                    className="absolute right-4 -top-16 bg-zinc-800 rounded-full w-10 py-3 border border-white/10 shadow-lg flex flex-col items-center justify-center gap-2 opacity-90 transition-opacity"
+                  >
+                    <Lock className="w-4 h-4 text-zinc-400" />
+                    <div className="w-1 h-1 rounded-full bg-zinc-500 animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <div className="w-1 h-1 rounded-full bg-zinc-500 animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <div className="w-1 h-1 rounded-full bg-zinc-500 animate-bounce" style={{ animationDelay: '300ms' }} />
+                  </div>
+                  <div 
+                    className="absolute right-4 top-2 bg-pink-500 rounded-full w-10 h-10 flex items-center justify-center text-white z-50 shadow-lg shadow-pink-500/20"
+                    style={{ transform: `translate(${Math.min(0, dragXOffset)}px, ${Math.min(0, dragOffset)}px)` }}
+                  >
+                     <Mic className="w-5 h-5" />
+                  </div>
+                </>
+              )}
               <div className="flex items-center space-x-3 overflow-hidden min-w-0 flex-1">
                 {/* Red Blinking Dot and Label */}
                 <div className="flex items-center gap-2 shrink-0">
@@ -1196,68 +1945,320 @@ export default function ChatPage() {
                   {formatTime(recordingTime)}
                 </span>
                 
-                {/* Visual Audio Waves (responsive, hides on extremely small devices if needed, but fits elegantly) */}
-                <div className="flex items-end space-x-1 h-5 px-1 shrink-0">
-                  <span className="w-[3px] h-3 bg-red-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s', animationDuration: '0.8s' }} />
-                  <span className="w-[3px] h-5 bg-red-400 rounded-full animate-bounce" style={{ animationDelay: '0.3s', animationDuration: '0.9s' }} />
-                  <span className="w-[3px] h-2 bg-red-500 rounded-full animate-bounce" style={{ animationDelay: '0.5s', animationDuration: '0.7s' }} />
-                  <span className="w-[3px] h-4.5 bg-red-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s', animationDuration: '1.1s' }} />
-                  <span className="w-[3px] h-3 bg-red-500 rounded-full animate-bounce" style={{ animationDelay: '0.4s', animationDuration: '0.8s' }} />
+                {/* Visual Audio Waves */}
+                <div className="flex items-center space-x-0.5 h-6 px-2 shrink-0 overflow-hidden flex-1">
+                  {audioData.map((val, i) => (
+                    <span 
+                      key={i} 
+                      className="w-[2px] bg-red-500 rounded-full transition-all duration-75"
+                      style={{ height: `${val}px` }} 
+                    />
+                  ))}
                 </div>
               </div>
               
               {/* Responsive Audio Action Buttons */}
               <div className="flex items-center space-x-2 shrink-0 pl-2">
-                <button 
-                  onClick={cancelRecording}
-                  className="w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-red-400 flex items-center justify-center transition-all active:scale-90"
-                  title="Cancelar gravação"
-                >
-                  <Trash2 className="w-5 h-5" />
-                </button>
-                <button 
-                  onClick={stopRecordingAndSend}
-                  className="w-10 h-10 rounded-xl bg-gradient-to-tr from-pink-500 to-rose-500 hover:brightness-110 text-white flex items-center justify-center transition-all active:scale-90 shadow-md shadow-pink-500/20"
-                  title="Enviar gravação"
-                >
-                  <Send className="w-4 h-4" />
-                </button>
+                {isRecordingLocked ? (
+                  <>
+                    <button 
+                      onClick={cancelRecording}
+                      className="w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-red-400 flex items-center justify-center transition-all active:scale-90"
+                      title="Cancelar gravação"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                    <button 
+                      onClick={stopRecordingAndSend}
+                      className="w-10 h-10 rounded-xl bg-gradient-to-tr from-pink-500 to-rose-500 hover:brightness-110 text-white flex items-center justify-center transition-all active:scale-90 shadow-md shadow-pink-500/20"
+                      title="Enviar gravação"
+                    >
+                      <Send className="w-4 h-4" />
+                    </button>
+                  </>
+                ) : (
+                  <div className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider flex items-center gap-1 opacity-70">
+                    <span className="animate-pulse">&lt;</span> Deslize p/ cancelar
+                  </div>
+                )}
               </div>
             </div>
           ) : (
-            <div className={cn(
-              "h-14 rounded-2xl px-2 flex items-center shadow-inner border transition-all duration-300 w-full",
-              "bg-zinc-900 border-white/5 focus-within:border-pink-500/30 focus-within:ring-1 focus-within:ring-pink-500/10"
-            )}>
-              <input 
-                 type="text" 
-                 placeholder="Digite uma mensagem..." 
-                 className={cn(
-                   "bg-transparent flex-1 outline-none text-[15px] pl-3 pr-2 min-w-0 transition-colors duration-300",
-                   "text-white placeholder-zinc-500"
-                 )}
-                 value={inputValue}
-                 onChange={(e) => setInputValue(e.target.value)}
-                 onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-              />
-              
-              <div className="flex items-center space-x-1 shrink-0">
-                <button 
-                  onClick={startRecording}
-                  className="w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 hover:text-pink-400 text-zinc-400 flex items-center justify-center transition-all active:scale-90"
-                  title="Gravar áudio"
-                >
-                  <Mic className="w-5 h-5" />
-                </button>
+            <div className="relative w-full">
+              {showEmojiPicker && (
+                <div className="absolute bottom-[4.5rem] left-0 z-50 w-full max-w-[340px] xs:max-w-[360px]">
+                  <div className="fixed inset-0 z-40" onClick={() => {
+                    setShowEmojiPicker(false);
+                    setMediaSearchQuery("");
+                  }}></div>
+                  <div className="relative z-50 border border-white/10 rounded-[2rem] overflow-hidden shadow-2xl bg-[#1a1c1e] flex flex-col h-[420px]">
+                    
+                    {/* Picker Content Area based on pickerTab */}
+                    <div className="flex-1 overflow-hidden flex flex-col">
+                      {pickerTab === 'emoji' ? (
+                        <EmojiPicker 
+                          theme={Theme.DARK} 
+                          emojiStyle={EmojiStyle.APPLE}
+                          width="100%"
+                          height={360}
+                          previewConfig={{ showPreview: false }}
+                          searchPlaceHolder="Pesquisar emoji"
+                          categories={[
+                            { category: 'suggested', name: 'Recentes' },
+                            { category: 'smileys_people', name: 'Smileys e pessoas' },
+                            { category: 'animals_nature', name: 'Animais e Natureza' },
+                            { category: 'food_drink', name: 'Comida e Bebida' },
+                            { category: 'travel_places', name: 'Viagens e Lugares' },
+                            { category: 'activities', name: 'Atividades' },
+                            { category: 'objects', name: 'Objetos' },
+                            { category: 'symbols', name: 'Símbolos' },
+                            { category: 'flags', name: 'Bandeiras' }
+                          ] as any}
+                          onEmojiClick={(emojiData) => {
+                            setInputValue(prev => prev + emojiData.emoji);
+                          }}
+                        />
+                      ) : pickerTab === 'gif' ? (
+                        <div className="flex-1 flex flex-col p-4 overflow-hidden h-[360px]">
+                          {/* Search Input */}
+                          <div className="relative mb-3 flex items-center shrink-0">
+                            <Search className="absolute left-3 w-4 h-4 text-zinc-400" />
+                            <input 
+                              type="text" 
+                              placeholder="Pesquisar GIF..." 
+                              value={mediaSearchQuery}
+                              onChange={(e) => setMediaSearchQuery(e.target.value)}
+                              className="w-full pl-10 pr-4 py-2 bg-[#121416] border-2 border-[#00a884] rounded-full text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-[#00e6b3] transition-colors"
+                            />
+                            {mediaSearchQuery && (
+                              <button 
+                                onClick={() => setMediaSearchQuery("")}
+                                className="absolute right-3 p-1 rounded-full hover:bg-white/5 text-zinc-400 hover:text-white"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                          
+                          {/* Scrollable GIF Grid */}
+                          <div className="flex-1 overflow-y-auto grid grid-cols-2 gap-2 pr-1 hide-scrollbar">
+                            {loadingMedia ? (
+                              <div className="col-span-2 py-12 text-center flex flex-col items-center justify-center text-zinc-400">
+                                <div className="w-8 h-8 rounded-full border-2 border-zinc-700 border-t-[#00a884] animate-spin mb-3" />
+                                <p className="text-xs font-semibold">Buscando GIFs na internet...</p>
+                              </div>
+                            ) : (() => {
+                              const displayGifs = (giphyGifs.length > 0 && !mediaError) 
+                                ? giphyGifs 
+                                : curatedGifs.filter(gif => {
+                                    if (!mediaSearchQuery) return true;
+                                    const q = mediaSearchQuery.toLowerCase().trim();
+                                    return gif.title.toLowerCase().includes(q) || gif.tags.some(t => t.toLowerCase().includes(q));
+                                  });
 
+                              if (displayGifs.length > 0) {
+                                return displayGifs.map(gif => (
+                                  <button 
+                                    key={gif.id}
+                                    onClick={() => {
+                                      sendGifMessage(gif.url);
+                                      setShowEmojiPicker(false);
+                                      setMediaSearchQuery("");
+                                    }}
+                                    className="group relative h-28 overflow-hidden rounded-xl border border-white/5 bg-zinc-900/50 hover:border-[#00a884] active:scale-[0.98] transition-all"
+                                  >
+                                    <img 
+                                      src={gif.url} 
+                                      alt={gif.title} 
+                                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                      referrerPolicy="no-referrer"
+                                    />
+                                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                      <p className="text-[10px] text-zinc-300 font-medium truncate text-left">{gif.title}</p>
+                                    </div>
+                                  </button>
+                                ));
+                              } else {
+                                return (
+                                  <div className="col-span-2 py-12 text-center flex flex-col items-center justify-center text-zinc-500">
+                                    <span className="text-2xl mb-1">🥺</span>
+                                    <p className="text-xs font-medium">Nenhum GIF encontrado</p>
+                                  </div>
+                                );
+                              }
+                            })()}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex-1 flex flex-col p-4 overflow-hidden h-[360px]">
+                          {/* Search Input */}
+                          <div className="relative mb-3 flex items-center shrink-0">
+                            <Search className="absolute left-3 w-4 h-4 text-zinc-400" />
+                            <input 
+                              type="text" 
+                              placeholder="Pesquisar figurinha..." 
+                              value={mediaSearchQuery}
+                              onChange={(e) => setMediaSearchQuery(e.target.value)}
+                              className="w-full pl-10 pr-4 py-2 bg-[#121416] border-2 border-[#00a884] rounded-full text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-[#00e6b3] transition-colors"
+                            />
+                            {mediaSearchQuery && (
+                              <button 
+                                onClick={() => setMediaSearchQuery("")}
+                                className="absolute right-3 p-1 rounded-full hover:bg-white/5 text-zinc-400 hover:text-white"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                          
+                          {/* Scrollable Sticker Grid */}
+                          <div className="flex-1 overflow-y-auto grid grid-cols-3 gap-2.5 pr-1 hide-scrollbar">
+                            {loadingMedia ? (
+                              <div className="col-span-3 py-12 text-center flex flex-col items-center justify-center text-zinc-400">
+                                <div className="w-8 h-8 rounded-full border-2 border-zinc-700 border-t-[#00a884] animate-spin mb-3" />
+                                <p className="text-xs font-semibold">Buscando figurinhas...</p>
+                              </div>
+                            ) : (() => {
+                              const displayStickers = (giphyStickers.length > 0 && !mediaError) 
+                                ? giphyStickers 
+                                : curatedStickers.filter(sticker => {
+                                    if (!mediaSearchQuery) return true;
+                                    const q = mediaSearchQuery.toLowerCase().trim();
+                                    return sticker.title.toLowerCase().includes(q) || sticker.tags.some(t => t.toLowerCase().includes(q));
+                                  });
+
+                              if (displayStickers.length > 0) {
+                                return displayStickers.map(sticker => (
+                                  <button 
+                                    key={sticker.id}
+                                    onClick={() => {
+                                      sendStickerMessage(sticker.url);
+                                      setShowEmojiPicker(false);
+                                      setMediaSearchQuery("");
+                                    }}
+                                    className="group relative h-20 flex items-center justify-center p-1.5 overflow-hidden rounded-xl border border-white/5 bg-zinc-900/10 hover:bg-white/5 hover:border-[#00a884] active:scale-[0.98] transition-all"
+                                  >
+                                    <img 
+                                      src={sticker.url} 
+                                      alt={sticker.title} 
+                                      className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
+                                      referrerPolicy="no-referrer"
+                                    />
+                                  </button>
+                                ));
+                              } else {
+                                return (
+                                  <div className="col-span-3 py-12 text-center flex flex-col items-center justify-center text-zinc-500">
+                                    <span className="text-2xl mb-1">🥺</span>
+                                    <p className="text-xs font-medium">Nenhum sticker encontrado</p>
+                                  </div>
+                                );
+                              }
+                            })()}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Bottom pill-shaped navigation container matching Android/WhatsApp */}
+                    <div className="flex items-center justify-center bg-[#1a1c1e] border-t border-white/5 py-3 px-4 gap-7 shrink-0">
+                      <button 
+                        onClick={() => {
+                          setPickerTab('emoji');
+                          setMediaSearchQuery("");
+                        }}
+                        className={cn(
+                          "flex items-center justify-center transition-all hover:scale-110 active:scale-95",
+                          pickerTab === 'emoji' ? "text-[#00a884] scale-105" : "text-zinc-500 hover:text-zinc-300"
+                        )} 
+                        title="Emojis"
+                      >
+                        <Smile className="w-[22px] h-[22px]" />
+                      </button>
+                      
+                      <button 
+                        onClick={() => {
+                          setPickerTab('gif');
+                          setMediaSearchQuery("");
+                        }}
+                        className={cn(
+                          "font-extrabold text-[10px] tracking-widest px-2 py-0.5 rounded border transition-all uppercase hover:scale-110 active:scale-95",
+                          pickerTab === 'gif' 
+                            ? "text-[#00a884] border-[#00a884] scale-105" 
+                            : "text-zinc-500 border-zinc-700/60 hover:text-zinc-300"
+                        )} 
+                        title="GIFs"
+                      >
+                        GIF
+                      </button>
+                      
+                      <button 
+                        onClick={() => {
+                          setPickerTab('sticker');
+                          setMediaSearchQuery("");
+                        }}
+                        className={cn(
+                          "flex items-center justify-center transition-all hover:scale-110 active:scale-95",
+                          pickerTab === 'sticker' ? "text-[#00a884] scale-105" : "text-zinc-500 hover:text-zinc-300"
+                        )} 
+                        title="Stickers"
+                      >
+                        <svg viewBox="0 0 24 24" className="w-[22px] h-[22px] fill-current">
+                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17.93c-3.95-.49-7-3.85-7-7.93s3.05-7.44 7-7.93v15.86zm2-1.25V5.32c2.83.95 5 3.65 5 6.68s-2.17 5.73-5 6.68z"/>
+                        </svg>
+                      </button>
+                    </div>
+
+                  </div>
+                </div>
+              )}
+              <div className={cn(
+                "min-h-[3.5rem] rounded-2xl flex items-center px-2 py-1.5 shadow-inner border transition-all duration-300 w-full",
+                "bg-zinc-900 border-white/5 focus-within:border-pink-500/30 focus-within:ring-1 focus-within:ring-pink-500/10"
+              )}>
                 <button 
-                   onClick={handleSendMessage}
-                   disabled={!inputValue.trim()}
-                   className="w-10 h-10 rounded-xl bg-gradient-to-tr from-pink-500 to-purple-600 hover:brightness-110 flex items-center justify-center transition-all active:scale-90 disabled:opacity-30 disabled:hover:brightness-100 disabled:active:scale-100 shadow-lg shadow-pink-500/10"
-                   title="Enviar mensagem"
+                  onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                  className="w-10 h-10 shrink-0 rounded-xl bg-transparent hover:bg-white/5 text-zinc-400 hover:text-white flex items-center justify-center transition-colors"
                 >
-                   <Send className="w-4.5 h-4.5 text-white" />
+                  <Smile className="w-5 h-5" />
                 </button>
+                <input 
+                   type="text" 
+                   placeholder="Digite uma mensagem..." 
+                   className={cn(
+                     "bg-transparent flex-1 outline-none text-[15px] pl-2 pr-2 min-w-0 transition-colors duration-300",
+                     "text-white placeholder-zinc-500"
+                   )}
+                   value={inputValue}
+                   onChange={(e) => setInputValue(e.target.value)}
+                   onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+                />
+                
+                <div className="flex items-center space-x-1 shrink-0">
+                  <button 
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      startYRef.current = e.clientY;
+                      startXRef.current = e.clientX;
+                      setDragOffset(0);
+                      setDragXOffset(0);
+                      startRecording();
+                    }}
+                    className="w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 hover:text-pink-400 text-zinc-400 flex items-center justify-center transition-all active:scale-90 select-none touch-none"
+                    title="Gravar áudio (Segure e arraste para cima para travar)"
+                  >
+                    <Mic className="w-5 h-5 pointer-events-none" />
+                  </button>
+  
+                  <button 
+                     onClick={handleSendMessage}
+                     disabled={!inputValue.trim()}
+                     className="w-10 h-10 rounded-xl bg-gradient-to-tr from-pink-500 to-purple-600 hover:brightness-110 flex items-center justify-center transition-all active:scale-90 disabled:opacity-30 disabled:hover:brightness-100 disabled:active:scale-100 shadow-lg shadow-pink-500/10"
+                     title="Enviar mensagem"
+                  >
+                     <Send className="w-4.5 h-4.5 text-white" />
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -1330,7 +2331,10 @@ export default function ChatPage() {
                   </div>
                   <div className="flex-1 overflow-hidden">
                     <div className="flex justify-between items-baseline mb-1">
-                      <h3 className={cn("font-semibold text-[16px] transition-colors duration-300", "text-white")}>{user.name}</h3>
+                      <div className="flex items-center gap-1.5">
+                        <h3 className={cn("font-semibold text-[16px] transition-colors duration-300", "text-white")}>{user.name}</h3>
+                        {mutedChats.includes(chat.id) && <VolumeX className="w-3.5 h-3.5 text-zinc-500" />}
+                      </div>
                       <span className={cn("text-[11px] transition-colors duration-300", "text-white/40")}>{chat.time}</span>
                     </div>
                     <p className={cn(

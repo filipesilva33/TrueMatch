@@ -4,8 +4,9 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
+import { App as CapacitorApp } from '@capacitor/app';
 import MobileLayout from './layouts/MobileLayout';
 import DiscoverPage from './pages/DiscoverPage';
 import MatchesPage from './pages/MatchesPage';
@@ -15,7 +16,10 @@ import ProfilePage from './pages/ProfilePage';
 import NotificationsPage from './pages/NotificationsPage';
 import EditProfilePage from './pages/EditProfilePage';
 import KYCPage from './pages/settings/KYCPage';
+import KYCDocumentSelectionPage from './pages/settings/KYCDocumentSelectionPage';
+import KYCCameraPage from './pages/settings/KYCCameraPage';
 import SettingsPage from './pages/settings/SettingsPage';
+import LauncherPage from './pages/settings/LauncherPage';
 import PrivacyPage from './pages/settings/PrivacyPage';
 import SecurityPage from './pages/settings/SecurityPage';
 import WelcomePage from './pages/WelcomePage';
@@ -24,6 +28,40 @@ import RegisterPage from './pages/RegisterPage';
 import CheckoutPage from './pages/CheckoutPage';
 import OwnerDashboard from './pages/admin/OwnerDashboard';
 import AdminLogin from './pages/admin/AdminLogin';
+
+function BackButtonHandler() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    let listener: { remove: () => void } | null = null;
+
+    const setupListener = async () => {
+      try {
+        listener = await CapacitorApp.addListener('backButton', () => {
+          const isRootPage = ['/', '/login', '/welcome', '/register', '/matches', '/chat', '/reels', '/profile'].includes(location.pathname);
+          if (isRootPage) {
+            CapacitorApp.exitApp();
+          } else {
+            navigate(-1);
+          }
+        });
+      } catch (e) {
+        // Fallback for browser environment where CapacitorApp may not be loaded
+      }
+    };
+
+    setupListener();
+
+    return () => {
+      if (listener) {
+        listener.remove();
+      }
+    };
+  }, [navigate, location]);
+
+  return null;
+}
 
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
@@ -38,6 +76,8 @@ export default function App() {
 
   useEffect(() => {
     const applyStyles = () => {
+      if (document.hidden) return;
+      
       const el1 = document.querySelector('div#root:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(4) > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(3) > div:nth-of-type(1)');
       if (el1) {
         (el1 as HTMLElement).style.width = '327px';
@@ -74,8 +114,8 @@ export default function App() {
         (el5_svg as HTMLElement).style.animation = 'heartbeat 1.2s infinite ease-in-out';
       }
     };
-    // Run multiple times to catch dynamic renders
-    const interval = setInterval(applyStyles, 500);
+    // Run multiple times to catch dynamic renders, with visibility-check to conserve resource
+    const interval = setInterval(applyStyles, 600);
     return () => clearInterval(interval);
   }, []);
 
@@ -174,6 +214,7 @@ export default function App() {
       </AnimatePresence>
 
       <BrowserRouter>
+        <BackButtonHandler />
         <Routes>
           <Route path="/welcome" element={<WelcomePage />} />
           <Route path="/login" element={<LoginPage />} />
@@ -188,7 +229,10 @@ export default function App() {
             <Route path="notifications" element={<NotificationsPage />} />
             <Route path="profile/edit" element={<EditProfilePage />} />
             <Route path="profile/settings/kyc" element={<KYCPage />} />
+            <Route path="profile/settings/kyc/document" element={<KYCDocumentSelectionPage />} />
+            <Route path="profile/settings/kyc/camera" element={<KYCCameraPage />} />
             <Route path="profile/settings/general" element={<SettingsPage />} />
+            <Route path="profile/settings/launcher" element={<LauncherPage />} />
             <Route path="profile/settings/privacy" element={<PrivacyPage />} />
             <Route path="profile/settings/security" element={<SecurityPage />} />
           </Route>

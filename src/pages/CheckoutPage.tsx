@@ -292,14 +292,14 @@ export default function CheckoutPage() {
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <button
             onClick={() => navigate(returnPath)}
-            className="flex items-center gap-2 text-xs font-bold text-zinc-400 hover:text-white transition-colors group rounded-xl bg-zinc-900/50 hover:bg-zinc-900 border border-white/5 px-3 py-1.5"
+            className="flex items-center gap-2 text-xs font-bold text-zinc-400 hover:text-white transition-colors group rounded-xl bg-zinc-900/50 hover:bg-zinc-900 border border-white/5 h-[34px] w-[112.3px] pl-[9px] pr-[17px] pt-0 pb-0"
           >
             <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
             Voltar ao TrueMatch
           </button>
           
           <div className="flex items-center gap-1.5 font-black text-sm tracking-widest text-zinc-100">
-            <span className="bg-gradient-to-r from-amber-400 to-yellow-500 text-transparent bg-clip-text">TRUEMATCH</span>
+            <span className="bg-gradient-to-r from-amber-400 to-yellow-500 text-transparent bg-clip-text h-[19px] w-[103.86px] inline-block">TRUEMATCH</span>
             <span className="text-[10px] bg-amber-400/10 text-amber-400 px-2 py-0.5 rounded-md border border-amber-500/20 font-bold uppercase tracking-wider">CHECKOUT</span>
           </div>
 

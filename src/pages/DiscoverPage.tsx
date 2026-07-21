@@ -467,6 +467,31 @@ export default function DiscoverPage() {
   const [filterRelationshipStatus, setFilterRelationshipStatus] = useState<string>('');
   const [filterPersonality, setFilterPersonality] = useState<string>('');
 
+  const handleClearFilters = () => {
+    setFilterCompatibility(70);
+    setFilterGender('Todos');
+    setFilterMinAge(18);
+    setFilterMaxAge(60);
+    setFilterDistance(50);
+    setFilterPopular(false);
+    setFilterVerified(false);
+    setFilterOnlineStatus('Todos');
+    setFilterHeight(150);
+    setFilterSexuality('');
+    setFilterIntent('');
+    setFilterZodiac('');
+    setFilterLanguage('');
+    setFilterLifestyle('');
+    setFilterChildren('');
+    setFilterPets('');
+    setFilterSmoking('');
+    setFilterDrinking('');
+    setFilterEducation('');
+    setFilterReligion('');
+    setFilterRelationshipStatus('');
+    setFilterPersonality('');
+  };
+
   const [isTrueMatchExpanded, setIsTrueMatchExpanded] = useState(false);
   const [trueMatchMode, setTrueMatchMode] = useState<'Equilibrado' | 'Profundo' | 'Química' | 'Afinidade' | 'Personalizado'>('Equilibrado');
   const [trueMatchInterestsWeight, setTrueMatchInterestsWeight] = useState(60);
@@ -611,9 +636,9 @@ export default function DiscoverPage() {
       <div 
         className="flex justify-between items-center z-10 w-full mb-5 mt-1 px-4"
       >
-        <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-pink-500 to-purple-500 flex items-center justify-center">
-             <Heart className="w-4 h-4 text-white fill-current" />
+        <div className="flex items-center">
+          <div className="w-[45px] h-[45px] mr-[12px] rounded-full bg-gradient-to-tr from-pink-500 to-purple-500 flex items-center justify-center">
+             <Heart className="w-[30px] h-[30px] text-white fill-current" />
           </div>
           <div className="flex flex-col">
             <div 
@@ -632,19 +657,21 @@ export default function DiscoverPage() {
               )}
             </div>
             <div 
-              className="flex items-center gap-1.5 flex-wrap mt-1"
+              className="flex flex-col mt-1"
             >
               <span className="text-pink-400 font-semibold text-[10px] tracking-widest uppercase">Encontros</span>
-              {getPrivacySetting('private') && (
-                <span className="text-[8px] bg-red-500/15 text-red-400 font-bold px-1 py-0.5 rounded border border-red-500/10 flex items-center gap-0.5" title="Perfil Privado Ativo">
-                  <Lock className="w-2 h-2 shrink-0" /> PRIVADO
-                </span>
-              )}
-              {getPrivacySetting('antifraud') && (
-                <span className="text-[8px] bg-blue-500/15 text-blue-400 font-bold px-1 py-0.5 rounded border border-blue-500/10 flex items-center gap-0.5" title="Modo Antifraude Ativo">
-                  <ShieldCheck className="w-2 h-2 shrink-0" /> ANTIFRAUDE
-                </span>
-              )}
+              <div className="flex items-center gap-1.5 ml-0 mt-0">
+                {getPrivacySetting('private') && (
+                  <span className="text-[8px] bg-red-500/15 text-red-400 font-bold px-1 py-0.5 rounded border border-red-500/10 flex items-center gap-0.5" title="Perfil Privado Ativo">
+                    <Lock className="w-2 h-2 shrink-0" /> PRIVADO
+                  </span>
+                )}
+                {getPrivacySetting('antifraud') && (
+                  <span className="text-[8px] bg-blue-500/15 text-blue-400 font-bold px-1 py-0.5 rounded border border-blue-500/10 flex items-center gap-0.5" title="Modo Antifraude Ativo">
+                    <ShieldCheck className="w-2 h-2 shrink-0" /> ANTIFRAUDE
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -1160,9 +1187,17 @@ export default function DiscoverPage() {
             <div className="flex-1 space-y-6 overflow-y-auto hide-scrollbar pb-8 px-6 py-6 relative z-10 custom-scrollbar">
                 {/* SECTION 1: ESSENCIAIS */}
                 <div className="space-y-4">
-                  <div className="flex items-center space-x-2 px-1">
-                    <div className="w-1 h-4 bg-pink-500 rounded-full"></div>
-                    <h3 className="text-xs font-black text-white/40 uppercase tracking-widest">Filtros Essenciais</h3>
+                  <div className="flex items-center justify-between px-1">
+                    <div className="flex items-center space-x-2">
+                      <div className="w-1 h-4 bg-pink-500 rounded-full"></div>
+                      <h3 className="text-xs font-black text-white/40 uppercase tracking-widest">Filtros Essenciais</h3>
+                    </div>
+                    <button
+                      onClick={handleClearFilters}
+                      className="text-[10px] font-bold text-pink-500 hover:text-pink-400 active:scale-95 transition-all uppercase tracking-wider bg-pink-500/10 hover:bg-pink-500/20 px-3 py-1 rounded-full border border-pink-500/20"
+                    >
+                      Limpar Filtro
+                    </button>
                   </div>
                   
                   {/* Compatibility */}
@@ -1348,12 +1383,12 @@ export default function DiscoverPage() {
                       <p className="text-[10px] text-zinc-500 text-center font-medium">Conta autêntica</p>
                     </div>
 
-                    <div className="space-y-4 pt-2">
+                    <div className="space-y-4 pt-2 col-span-2">
                       <div className="flex items-center space-x-2 px-1">
                         <div className="w-1 h-4 bg-pink-500 rounded-full"></div>
                         <h3 className="text-xs font-black text-white/40 uppercase tracking-widest">Status de Atividade</h3>
                       </div>
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className="flex bg-zinc-950/80 border border-white/5 rounded-2xl p-1.5 shadow-inner">
                         {['Todos', 'Online', 'Offline'].map((status) => {
                           const isActive = filterOnlineStatus === status;
                           return (
@@ -1361,41 +1396,26 @@ export default function DiscoverPage() {
                               key={status}
                               onClick={() => setFilterOnlineStatus(status)}
                               className={cn(
-                                "relative flex flex-col items-center justify-center space-y-1 py-2 px-1 rounded-full border text-center transition-all duration-300 select-none cursor-pointer w-full min-h-[52px]",
-                                isActive
-                                  ? status === 'Online'
-                                    ? "bg-green-500/10 border-green-500/40 text-green-400 shadow-[0_0_12px_rgba(34,197,94,0.18)] font-bold scale-[1.02]"
-                                    : status === 'Offline'
-                                    ? "bg-zinc-500/10 border-zinc-500/40 text-zinc-300 shadow-[0_0_12px_rgba(156,163,175,0.12)] font-bold scale-[1.02]"
-                                    : "bg-purple-500/10 border-purple-500/40 text-purple-400 shadow-[0_0_12px_rgba(168,85,247,0.18)] font-bold scale-[1.02]"
-                                  : "bg-zinc-900/40 border-white/5 hover:bg-zinc-800/40 hover:border-white/10 text-zinc-400"
+                                "flex-1 py-2.5 text-xs font-bold rounded-xl transition-all duration-300 flex items-center justify-center space-x-2 select-none cursor-pointer",
+                                isActive 
+                                  ? "bg-gradient-to-r from-zinc-800 to-zinc-700 text-white shadow-md border border-white/10" 
+                                  : "text-zinc-500 hover:text-white"
                               )}
                             >
-                              <div className="relative flex items-center justify-center w-3 h-3">
-                                {status === 'Online' && (
-                                  <span className={cn(
-                                    "absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75",
-                                    isActive ? "animate-ping" : "hidden"
-                                  )} />
-                                )}
-                                {status === 'Offline' && isActive && (
-                                  <span className="absolute inline-flex h-full w-full rounded-full bg-zinc-400/40 animate-pulse" />
-                                )}
-                                {status === 'Todos' && isActive && (
-                                  <span className="absolute inline-flex h-full w-full rounded-full bg-purple-400/40 animate-pulse" />
+                              <span className="relative flex h-1.5 w-1.5">
+                                {status === 'Online' && isActive && (
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
                                 )}
                                 <span className={cn(
-                                  "relative inline-flex rounded-full w-1.5 h-1.5 transition-all duration-300 shrink-0",
+                                  "relative inline-flex rounded-full h-1.5 w-1.5",
                                   status === 'Online' 
-                                    ? (isActive ? "bg-green-400 shadow-[0_0_8px_rgba(34,197,94,0.8)]" : "bg-green-500/40") 
+                                    ? (isActive ? "bg-green-400" : "bg-green-500/50") 
                                     : status === 'Offline' 
-                                    ? (isActive ? "bg-zinc-200 shadow-[0_0_6px_rgba(255,255,255,0.4)]" : "bg-zinc-600") 
-                                    : (isActive ? "bg-purple-400 shadow-[0_0_8px_rgba(168,85,247,0.8)]" : "bg-purple-500/40")
-                                )} />
-                              </div>
-                              <span className="font-extrabold text-[9px] uppercase tracking-wider leading-none">
-                                {status}
+                                    ? (isActive ? "bg-zinc-200" : "bg-zinc-600") 
+                                    : (isActive ? "bg-purple-400" : "bg-purple-500/50")
+                                )}></span>
                               </span>
+                              <span>{status}</span>
                             </button>
                           );
                         })}

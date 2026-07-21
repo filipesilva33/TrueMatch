@@ -3,6 +3,19 @@
  * Avoids loading external files and is fully client-side.
  */
 
+let cachedAudioCtx: AudioContext | null = null;
+
+function getAudioContext(): AudioContext | null {
+  if (typeof window === 'undefined') return null;
+  const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+  if (!AudioContextClass) return null;
+  
+  if (!cachedAudioCtx) {
+    cachedAudioCtx = new AudioContextClass();
+  }
+  return cachedAudioCtx;
+}
+
 export function playUiSound(type: 'click' | 'success' | 'toggleOn' | 'toggleOff' | 'notification' | 'match' | 'message_received' | 'message_sent' | 'gold_unlock') {
   const stored = localStorage.getItem('matchdeck_settings');
   let soundsEnabled = true;
@@ -22,9 +35,8 @@ export function playUiSound(type: 'click' | 'success' | 'toggleOn' | 'toggleOff'
   if (!soundsEnabled) return;
 
   try {
-    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AudioContextClass) return;
-    const ctx = new AudioContextClass();
+    const ctx = getAudioContext();
+    if (!ctx) return;
     
     // Resume audio context if suspended (common browser security policy)
     if (ctx.state === 'suspended') {

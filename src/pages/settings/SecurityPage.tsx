@@ -1,13 +1,19 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Lock, ChevronLeft, Zap, ChevronRight, Smartphone, ShieldCheck, LogOut, Check, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Shield, Lock, ChevronRight, ShieldCheck, Mail, Phone, Smartphone, Monitor, LogOut, Check } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import { playUiSound } from '../../utils/audio';
 
 export default function SecurityPage() {
   const navigate = useNavigate();
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
   const [showChangePass, setShowChangePass] = useState(false);
+  
+  // 2FA Setup State
+  const [show2FASetupModal, setShow2FASetupModal] = useState(false);
+  const [twoFactorCode, setTwoFactorCode] = useState('');
+  const [isVerifying2FA, setIsVerifying2FA] = useState(false);
   
   // Toast Alert State
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
@@ -25,36 +31,40 @@ export default function SecurityPage() {
 
   // Connected Devices State
   const [devices, setDevices] = useState([
-    { id: 1, name: 'iPhone 15 Pro', location: 'São Paulo, BR', active: true },
-    { id: 2, name: 'MacBook Air M2', location: 'São Paulo, BR', active: false },
-    { id: 3, name: 'iPad Pro M1', location: 'Rio de Janeiro, BR', active: false },
+    { id: 1, name: 'Este dispositivo (Smartphone)', location: 'São Paulo, Brasil', active: true, type: 'smartphone' },
+    { id: 2, name: 'Desktop Chrome (Windows 11)', location: 'Rio de Janeiro, Brasil', active: false, type: 'desktop' },
+    { id: 3, name: 'App iOS (iPhone 14)', location: 'Curitiba, Brasil', active: false, type: 'smartphone' },
   ]);
+
+  const handleRevokeDevice = (id: number) => {
+    playUiSound('click');
+    setDevices(prev => prev.filter(device => device.id !== id));
+  };
+
+  const handleLogoutAll = () => {
+    playUiSound('click');
+    setDevices(prev => prev.filter(device => device.active));
+  };
 
   // Handle password update
   const handleUpdatePassword = (e: React.FormEvent) => {
     e.preventDefault();
     playUiSound('click');
 
-    if (!currentPassword) {
-      showToast('Por favor, informe sua senha atual.', 'error');
-      playUiSound('toggleOff');
-      return;
-    }
-
-    if (!newPassword) {
-      showToast('Por favor, insira a nova senha.', 'error');
+    if (!currentPassword || !newPassword) {
+      showToast('Preencha todos os campos.', 'error');
       playUiSound('toggleOff');
       return;
     }
 
     if (newPassword.length < 6) {
-      showToast('A nova senha deve conter pelo menos 6 caracteres.', 'error');
+      showToast('A nova senha deve ter pelo menos 6 caracteres.', 'error');
       playUiSound('toggleOff');
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      showToast('A nova senha e a confirmação não conferem.', 'error');
+      showToast('As senhas não conferem.', 'error');
       playUiSound('toggleOff');
       return;
     }
@@ -62,7 +72,7 @@ export default function SecurityPage() {
     setIsUpdatingPassword(true);
     playUiSound('success');
 
-    // Simulate database update delay
+    // Simulate update
     setTimeout(() => {
       showToast('Sua senha foi alterada com sucesso!', 'success');
       setCurrentPassword('');
@@ -73,28 +83,8 @@ export default function SecurityPage() {
     }, 1000);
   };
 
-  // Handle revoking device session
-  const handleRevokeDevice = (id: number, name: string) => {
-    playUiSound('click');
-    setDevices(prev => prev.filter(device => device.id !== id));
-    showToast(`Sessão no ${name} encerrada com sucesso!`, 'success');
-    playUiSound('success');
-  };
-
-  // Handle account logout
-  const handleLogout = () => {
-    playUiSound('click');
-    showToast('Encerrando sua sessão...', 'info');
-    playUiSound('success');
-    
-    setTimeout(() => {
-      localStorage.removeItem('matchdeck_user_token');
-      navigate('/');
-    }, 1000);
-  };
-
   return (
-    <div className="h-full overflow-y-auto bg-black pb-32 hide-scrollbar relative">
+    <div className="relative h-full w-full bg-black font-sans overflow-x-hidden text-white">
       {/* Toast alert system */}
       <AnimatePresence>
         {toast && (
@@ -106,19 +96,19 @@ export default function SecurityPage() {
           >
             <div className={cn(
               "px-5 py-3.5 rounded-full shadow-2xl border flex items-center gap-3 backdrop-blur-xl max-w-[300px] transition-all",
-              toast.type === 'success' ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" :
+              toast.type === 'success' ? "bg-cyan-500/10 border-cyan-500/20 text-cyan-400" :
               toast.type === 'error' ? "bg-red-500/10 border-red-500/20 text-red-400" :
               "bg-zinc-900/80 border-white/10 text-zinc-300"
             )}>
               <div className={cn(
                 "w-7 h-7 rounded-full flex items-center justify-center shrink-0 shadow-sm",
-                toast.type === 'success' ? "bg-emerald-500/20" :
+                toast.type === 'success' ? "bg-cyan-500/20" :
                 toast.type === 'error' ? "bg-red-500/20" :
                 "bg-zinc-500/20"
               )}>
                 <div className={cn(
                   "w-1.5 h-1.5 rounded-full animate-pulse",
-                  toast.type === 'success' ? "bg-emerald-400" :
+                  toast.type === 'success' ? "bg-cyan-400" :
                   toast.type === 'error' ? "bg-red-400" :
                   "bg-zinc-400"
                 )} />
@@ -129,8 +119,10 @@ export default function SecurityPage() {
         )}
       </AnimatePresence>
 
-      <div className="pt-6 px-6 max-w-2xl mx-auto">
-        <div className="flex items-center mb-8 relative">
+      <div className="h-full overflow-y-auto pb-32 hide-scrollbar">
+        
+        {/* Header */}
+        <div className="relative flex justify-center items-center px-5 py-6">
           <button 
             onClick={() => {
               playUiSound('click');
@@ -142,134 +134,209 @@ export default function SecurityPage() {
               } else {
                 navigate(-1);
               }
-            }}
-            className="w-10 h-10 rounded-full bg-zinc-900 border border-white/5 flex items-center justify-center text-zinc-400 hover:text-white transition-colors absolute left-0 z-10"
+            }} 
+            className="absolute left-5 w-10 h-10 rounded-full bg-zinc-900 border border-white/5 flex items-center justify-center text-zinc-400 hover:text-white transition-colors"
           >
-            <ChevronLeft className="w-6 h-6" />
+            <ArrowLeft className="w-5 h-5" />
           </button>
-          <div className="w-full text-center">
-            <h1 className="text-2xl font-black text-white tracking-tight">Segurança</h1>
-            <p className="text-emerald-500 text-[10px] font-black uppercase tracking-widest">Proteção da Conta</p>
-          </div>
+          <span className="font-bold text-[19px] leading-tight">{showChangePass ? 'Alterar Senha' : 'Segurança e Login'}</span>
         </div>
 
-        <div className="space-y-6">
+        <div className="px-5 mt-2 space-y-8">
+          
+          {/* Security Banner */}
           {!showChangePass ? (
             <>
-              {/* Change Password Card */}
-              <motion.div 
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="bg-zinc-900 rounded-[2rem] p-4 border border-white/5 animate-fade-in"
-              >
+              <div className="bg-[#1a1500] border border-amber-500/20 rounded-[1.5rem] p-5 flex items-start justify-between">
+                <div className="flex-1 pr-4">
+                  <h3 className="text-amber-500 font-bold text-[15px] mb-1.5">Nível de Segurança: Médio</h3>
+                  <p className="text-amber-500/70 text-[13px] leading-snug font-medium">
+                    Ative a autenticação de dois fatores para mais segurança.
+                  </p>
+                </div>
+                <div className="w-10 h-10 rounded-full bg-amber-500/20 flex items-center justify-center shrink-0">
+                  <Shield className="w-5 h-5 text-amber-500" />
+                </div>
+              </div>
+
+              <p className="text-zinc-300 text-[14px] px-1 font-medium text-center">
+                Proteja sua conta e monitore acessos
+              </p>
+
+              {/* Login and Password Section */}
+              <section>
+                <h4 className="text-zinc-500 text-[11px] font-bold uppercase tracking-wider mb-3 px-2 text-center">
+                  LOGIN E SENHA
+                </h4>
                 <button 
                   onClick={() => {
                     playUiSound('click');
                     setShowChangePass(true);
                   }}
-                  className="w-full flex justify-between items-center p-6 rounded-[1.5rem] bg-emerald-500/5 border border-emerald-500/10 hover:bg-emerald-500/10 transition-all group"
+                  className="w-full bg-[#121212] rounded-[1.5rem] p-4 flex items-center justify-between hover:bg-[#1a1a1a] transition-colors active:scale-[0.98]"
                 >
-                  <div className="flex items-center">
-                    <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 flex items-center justify-center mr-4">
-                      <Zap className="w-6 h-6 text-emerald-500" />
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center">
+                      <Lock className="w-5 h-5 text-white" />
                     </div>
-                    <div className="text-left">
-                      <span className="text-sm font-bold block text-white">Alterar Senha</span>
-                      <p className="text-[10px] text-zinc-500">Mantenha sua conta sempre protegida</p>
+                    <div className="flex flex-col items-start text-left">
+                      <span className="font-bold text-[15px] text-white">Alterar Senha</span>
+                      <span className="text-zinc-400 text-[13px]">Última alteração: Há 3 meses</span>
                     </div>
                   </div>
-                  <ChevronRight className="w-5 h-5 text-zinc-600 group-hover:text-emerald-500 transition-colors" />
+                  <ChevronRight className="w-5 h-5 text-zinc-600" />
                 </button>
-              </motion.div>
+              </section>
 
-              {/* Connected Devices Card */}
-              <div className="bg-zinc-900 rounded-[2.5rem] p-8 border border-white/5">
-                <div className="flex items-center space-x-2 mb-6 px-2">
-                  <Smartphone className="w-4 h-4 text-emerald-500" />
-                  <h3 className="text-xs font-black text-zinc-500 uppercase tracking-[0.2em]">Dispositivos Conectados</h3>
+              {/* Advanced Authentication Section */}
+              <section>
+                <h4 className="text-zinc-500 text-[11px] font-bold uppercase tracking-wider mb-3 px-2 text-center">
+                  AUTENTICAÇÃO AVANÇADA
+                </h4>
+            <div className="w-full bg-[#121212] rounded-[1.5rem] p-4 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center shrink-0">
+                  <ShieldCheck className="w-5 h-5 text-white" />
                 </div>
-                
-                <div className="space-y-3">
-                  <AnimatePresence initial={false}>
-                    {devices.map((device, idx) => (
-                      <motion.div 
-                        key={device.id}
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
-                        className="flex justify-between items-center p-5 rounded-2xl bg-white/[0.02] border border-white/5"
-                      >
-                        <div className="flex flex-col text-left">
-                          <span className="text-sm font-bold text-white">{device.name}</span>
-                          <span className="text-[10px] text-zinc-500">{device.location}</span>
-                        </div>
-                        {device.active ? (
-                          <div className="flex items-center space-x-2">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                            <span className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">Ativo</span>
-                          </div>
-                        ) : (
-                          <button 
-                            onClick={() => handleRevokeDevice(device.id, device.name)}
-                            className="px-4 py-2 rounded-xl bg-red-500/10 text-red-500 text-[9px] font-black uppercase tracking-widest hover:bg-red-500/20 transition-colors"
-                          >
-                            Sair
-                          </button>
-                        )}
-                      </motion.div>
-                    ))}
-                  </AnimatePresence>
-                  
-                  {devices.length === 1 && (
-                    <p className="text-[10px] text-zinc-500 text-center pt-2">
-                      Nenhum outro dispositivo conectado no momento.
-                    </p>
-                  )}
+                <div className="flex flex-col items-start text-left max-w-[180px]">
+                  <span className="font-bold text-[15px] text-white mb-0.5">Autenticação de Dois Fatores (2FA)</span>
+                  <span className="text-zinc-400 text-[13px] leading-snug">Adicione uma camada extra de proteção</span>
                 </div>
               </div>
-
-              {/* Global Logout Button */}
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="bg-zinc-900 rounded-[2rem] p-4 border border-red-500/5 hover:border-red-500/10 transition-all"
+              
+              {/* Toggle Switch */}
+              <button
+                onClick={() => {
+                  playUiSound('click');
+                  if (!twoFactorEnabled) {
+                    setShow2FASetupModal(true);
+                  } else {
+                    setTwoFactorEnabled(false);
+                    showToast('Autenticação de dois fatores desativada.', 'info');
+                  }
+                }}
+                className={`w-12 h-7 rounded-full p-1 transition-colors duration-300 ease-in-out shrink-0 border ${
+                  twoFactorEnabled ? 'bg-cyan-400 border-cyan-400' : 'bg-transparent border-white/20'
+                }`}
               >
-                <button 
-                  onClick={handleLogout}
-                  className="w-full flex justify-between items-center p-6 rounded-[1.5rem] bg-red-500/5 border border-red-500/10 hover:bg-red-500/10 transition-all group"
-                >
-                  <div className="flex items-center">
-                    <div className="w-12 h-12 rounded-2xl bg-red-500/10 group-hover:bg-red-500/20 flex items-center justify-center mr-4 transition-colors">
-                      <LogOut className="w-6 h-6 text-red-500" />
-                    </div>
-                    <div className="text-left">
-                      <span className="text-sm font-bold block text-red-500">Sair da Conta</span>
-                      <p className="text-[10px] text-zinc-500">Encerrar sessão com segurança</p>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-5 h-5 text-red-500/40 group-hover:text-red-500 transition-colors" />
-                </button>
-              </motion.div>
+                <motion.div
+                  animate={{ x: twoFactorEnabled ? 20 : 0 }}
+                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                  className={`w-5 h-5 rounded-full ${twoFactorEnabled ? 'bg-black' : 'bg-zinc-500'}`}
+                />
+              </button>
+            </div>
+          </section>
 
-              {/* Secure Encryption Banner */}
-              <div className="bg-zinc-900/50 rounded-[2.5rem] p-8 border border-white/5 text-center">
-                <ShieldCheck className="w-8 h-8 text-emerald-500/40 mx-auto mb-4" />
-                <p className="text-[11px] text-zinc-500 max-w-[200px] mx-auto leading-relaxed">
-                  Seu tráfego de dados é protegido por criptografia de ponta a ponta SHA-256.
-                </p>
+          {/* Verified Contacts Section */}
+          <section>
+            <h4 className="text-zinc-500 text-[11px] font-bold uppercase tracking-wider mb-3 px-2 text-center">
+              CONTATOS VERIFICADOS
+            </h4>
+            <div className="space-y-2">
+              <div className="w-full bg-[#121212] rounded-[1.5rem] p-4 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center shrink-0">
+                    <Mail className="w-5 h-5 text-white" />
+                  </div>
+                  <div className="flex flex-col items-start text-left">
+                    <span className="font-bold text-[15px] text-white">E-mail</span>
+                    <span className="text-zinc-400 text-[13px]">filipe.s***@gmail.com</span>
+                  </div>
+                </div>
+                <div className="w-6 h-6 rounded-full bg-[#22c55e] flex items-center justify-center shrink-0">
+                  <svg className="w-4 h-4 text-black" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                  </svg>
+                </div>
               </div>
+
+              <div className="w-full bg-[#121212] rounded-[1.5rem] p-4 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center shrink-0">
+                    <Phone className="w-5 h-5 text-white" />
+                  </div>
+                  <div className="flex flex-col items-start text-left">
+                    <span className="font-bold text-[15px] text-white">Telefone</span>
+                    <span className="text-zinc-400 text-[13px]">+55 (11) 9****-1234</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Devices and Sessions Section */}
+          <section>
+            <h4 className="text-zinc-500 text-[11px] font-bold uppercase tracking-wider mb-3 px-2 text-center">
+              DISPOSITIVOS E SESSÕES
+            </h4>
+            <div className="space-y-2">
+              <AnimatePresence initial={false}>
+                {devices.map((device) => (
+                  <motion.div 
+                    key={device.id}
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="w-full bg-[#121212] rounded-[1.5rem] p-4 flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center shrink-0">
+                          {device.type === 'smartphone' ? (
+                            <Smartphone className="w-5 h-5 text-rose-500" />
+                          ) : (
+                            <Monitor className="w-5 h-5 text-white" />
+                          )}
+                        </div>
+                        <div className="flex flex-col items-start text-left">
+                          <span className="font-bold text-[15px] text-white">{device.name}</span>
+                          <span className="text-zinc-400 text-[13px]">{device.location}</span>
+                        </div>
+                      </div>
+                      
+                      {device.active ? (
+                        <div className="flex flex-col items-center justify-center gap-0.5 ml-2">
+                          {['A', 'T', 'I', 'V', 'O'].map((letter, i) => (
+                            <span key={i} className="text-rose-500 text-[8px] font-black leading-none">{letter}</span>
+                          ))}
+                        </div>
+                      ) : (
+                        <button 
+                          onClick={() => handleRevokeDevice(device.id)}
+                          className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/5 transition-colors shrink-0"
+                        >
+                          <LogOut className="w-5 h-5 text-rose-500" />
+                        </button>
+                      )}
+                    </div>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
+            
+            {devices.length > 1 && (
+              <button 
+                onClick={handleLogoutAll}
+                className="w-full mt-4 bg-transparent border border-rose-500 rounded-full p-4 flex items-center justify-center text-rose-500 font-bold text-[14px] hover:bg-rose-500/10 transition-colors active:scale-[0.98]"
+              >
+                Encerrar todas as outras sessões
+              </button>
+            )}
+          </section>
             </>
           ) : (
-            /* Change Password Form Container */
             <motion.div 
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="bg-zinc-900 rounded-[2.5rem] p-8 border border-white/5"
+              className="bg-[#121212] rounded-[2rem] p-6 border border-white/5"
             >
               <form onSubmit={handleUpdatePassword} className="space-y-6">
-                <div className="flex items-center gap-2 mb-2">
-                  <Lock className="w-5 h-5 text-emerald-500" />
-                  <h2 className="text-md font-bold text-white text-left">Definir Nova Senha</h2>
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-10 h-10 rounded-full bg-cyan-400/10 flex items-center justify-center shrink-0">
+                    <Lock className="w-5 h-5 text-cyan-400" />
+                  </div>
+                  <h2 className="text-lg font-bold text-white text-left">Definir Nova Senha</h2>
                 </div>
 
                 <div className="space-y-2 text-left">
@@ -280,7 +347,7 @@ export default function SecurityPage() {
                     value={currentPassword}
                     onChange={(e) => setCurrentPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-sm text-white focus:outline-none focus:border-emerald-500/50 transition-colors"
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-[15px] text-white focus:outline-none focus:border-cyan-400/50 transition-colors"
                   />
                 </div>
                 
@@ -292,7 +359,7 @@ export default function SecurityPage() {
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-sm text-white focus:outline-none focus:border-emerald-500/50 transition-colors"
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-[15px] text-white focus:outline-none focus:border-cyan-400/50 transition-colors"
                   />
                 </div>
 
@@ -304,7 +371,7 @@ export default function SecurityPage() {
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-sm text-white focus:outline-none focus:border-emerald-500/50 transition-colors"
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-[15px] text-white focus:outline-none focus:border-cyan-400/50 transition-colors"
                   />
                 </div>
                 
@@ -318,19 +385,19 @@ export default function SecurityPage() {
                       setNewPassword('');
                       setConfirmPassword('');
                     }}
-                    className="flex-1 py-4 rounded-2xl bg-zinc-800 text-zinc-400 text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 hover:bg-zinc-700 hover:text-white"
+                    className="flex-1 py-4 rounded-full bg-zinc-800 text-zinc-300 font-bold text-[14px] transition-all active:scale-95 hover:bg-zinc-700 hover:text-white"
                   >
                     Voltar
                   </button>
                   <button 
                     type="submit"
                     disabled={isUpdatingPassword}
-                    className="flex-1 py-4 rounded-2xl bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-500/20 transition-all active:scale-95 flex items-center justify-center gap-2 hover:bg-emerald-400 disabled:opacity-50"
+                    className="flex-1 py-4 rounded-full bg-cyan-400 text-black font-black text-[14px] shadow-lg shadow-cyan-400/20 transition-all active:scale-95 flex items-center justify-center gap-2 hover:bg-cyan-300 disabled:opacity-50"
                   >
                     {isUpdatingPassword ? (
                       <>
-                        <Check className="w-3.5 h-3.5 animate-bounce" />
-                        <span>Atualizando...</span>
+                        <Check className="w-4 h-4 animate-bounce" />
+                        <span>Salvando...</span>
                       </>
                     ) : (
                       <span>Atualizar</span>
@@ -340,8 +407,114 @@ export default function SecurityPage() {
               </form>
             </motion.div>
           )}
+
         </div>
       </div>
+
+      {/* 2FA Setup Modal */}
+      <AnimatePresence>
+        {show2FASetupModal && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col justify-end"
+          >
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="bg-[#121212] rounded-t-[2.5rem] p-6 pb-12 w-full border-t border-white/10 flex flex-col"
+            >
+              <div className="w-12 h-1.5 bg-white/10 rounded-full mx-auto mb-6" />
+              
+              <div className="flex flex-col items-center text-center">
+                <div className="w-16 h-16 rounded-full bg-cyan-400/10 flex items-center justify-center mb-4">
+                  <ShieldCheck className="w-8 h-8 text-cyan-400" />
+                </div>
+                <h3 className="text-xl font-bold text-white mb-2">Configurar 2FA</h3>
+                <p className="text-zinc-400 text-sm mb-6 max-w-[280px]">
+                  Use um aplicativo autenticador como Google Authenticator ou Authy para escanear o código.
+                </p>
+
+                {/* Simulated QR Code */}
+                <div className="w-48 h-48 bg-white p-2 rounded-2xl mb-6 relative group overflow-hidden">
+                  <div className="absolute inset-0 flex flex-wrap p-2 gap-1 opacity-80">
+                    {Array.from({ length: 64 }).map((_, i) => (
+                      <div key={i} className={`w-[18px] h-[18px] ${Math.random() > 0.5 ? 'bg-black' : 'bg-transparent'} ${i % 8 === 0 || i % 8 === 7 || Math.floor(i / 8) === 0 || Math.floor(i / 8) === 7 ? 'bg-black rounded-sm' : ''}`} />
+                    ))}
+                  </div>
+                  <div className="absolute top-4 left-4 w-10 h-10 border-4 border-black rounded-lg" />
+                  <div className="absolute top-4 right-4 w-10 h-10 border-4 border-black rounded-lg" />
+                  <div className="absolute bottom-4 left-4 w-10 h-10 border-4 border-black rounded-lg" />
+                </div>
+
+                <div className="w-full space-y-2 text-left mb-6">
+                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">Código de 6 dígitos</label>
+                  <input 
+                    type="number"
+                    maxLength={6}
+                    value={twoFactorCode}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                      setTwoFactorCode(val);
+                    }}
+                    placeholder="000000"
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-2xl text-center tracking-[0.5em] font-mono text-white focus:outline-none focus:border-cyan-400/50 transition-colors"
+                  />
+                </div>
+
+                <div className="flex w-full space-x-3">
+                  <button 
+                    onClick={() => {
+                      playUiSound('click');
+                      setShow2FASetupModal(false);
+                      setTwoFactorCode('');
+                    }}
+                    className="flex-1 py-4 rounded-full bg-zinc-800 text-zinc-300 font-bold text-[14px] transition-all active:scale-95 hover:bg-zinc-700 hover:text-white"
+                  >
+                    Cancelar
+                  </button>
+                  <button 
+                    onClick={() => {
+                      playUiSound('click');
+                      if (twoFactorCode.length !== 6) {
+                        showToast('O código deve ter 6 dígitos.', 'error');
+                        playUiSound('toggleOff');
+                        return;
+                      }
+                      
+                      setIsVerifying2FA(true);
+                      
+                      // Simulate verification
+                      setTimeout(() => {
+                        setIsVerifying2FA(false);
+                        setTwoFactorEnabled(true);
+                        setShow2FASetupModal(false);
+                        setTwoFactorCode('');
+                        showToast('2FA ativado com sucesso!', 'success');
+                        playUiSound('success');
+                      }, 1200);
+                    }}
+                    disabled={isVerifying2FA || twoFactorCode.length !== 6}
+                    className="flex-1 py-4 rounded-full bg-cyan-400 text-black font-black text-[14px] shadow-lg shadow-cyan-400/20 transition-all active:scale-95 flex items-center justify-center gap-2 hover:bg-cyan-300 disabled:opacity-50"
+                  >
+                    {isVerifying2FA ? (
+                      <>
+                        <div className="w-4 h-4 rounded-full border-2 border-black/20 border-t-black animate-spin" />
+                        <span>Verificando...</span>
+                      </>
+                    ) : (
+                      <span>Ativar 2FA</span>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

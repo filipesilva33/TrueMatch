@@ -321,7 +321,12 @@ export default function OwnerDashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
-                  {users.filter(u => u.name.toLowerCase().includes(searchTerm.toLowerCase())).map(user => (
+                  {users.filter(u => {
+                    const searchLower = searchTerm.toLowerCase().trim();
+                    if (searchLower === '') return true;
+                    const nameWords = u.name.toLowerCase().split(/\s+/);
+                    return nameWords.some(word => word.startsWith(searchLower));
+                  }).map(user => (
                     <tr key={user.id} className="hover:bg-white/[0.02] transition-colors group">
                       <td className="px-8 py-5">
                         <div className="flex items-center gap-4">
@@ -340,7 +345,7 @@ export default function OwnerDashboard() {
                         </div>
                       </td>
                       <td className="px-8 py-5">
-                        <span className="text-[11px] font-black text-zinc-400 uppercase tracking-widest">{user.location}</span>
+                        <span className="text-[11px] font-black text-zinc-400 uppercase tracking-widest">{user.city || 'São Paulo, SP'}</span>
                       </td>
                       <td className="px-8 py-5">
                         <span className={cn(
@@ -379,7 +384,12 @@ export default function OwnerDashboard() {
 
             {/* Mobile User Card List */}
             <div className="md:hidden space-y-4">
-              {users.filter(u => u.name.toLowerCase().includes(searchTerm.toLowerCase())).map(user => (
+              {users.filter(u => {
+                const searchLower = searchTerm.toLowerCase().trim();
+                if (searchLower === '') return true;
+                const nameWords = u.name.toLowerCase().split(/\s+/);
+                return nameWords.some(word => word.startsWith(searchLower));
+              }).map(user => (
                 <div key={user.id} className="bg-zinc-900/50 border border-white/5 p-5 rounded-[1.5rem] space-y-4">
                   <div className="flex items-center gap-4">
                     <div className="w-14 h-14 rounded-2xl overflow-hidden relative border border-white/10 shrink-0">
@@ -394,7 +404,7 @@ export default function OwnerDashboard() {
                       <h4 className="font-black text-sm uppercase tracking-wider truncate">{user.name}, {user.age}</h4>
                       <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest">ID: #{user.id.slice(0, 8)}</p>
                       <div className="flex items-center gap-2 mt-1">
-                        <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">{user.location}</span>
+                        <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">{user.city || 'São Paulo, SP'}</span>
                         <span className={cn(
                           "px-2 py-0.5 rounded-full text-[7px] font-black uppercase tracking-widest",
                           user.verified ? "bg-emerald-500/10 text-emerald-500" : "bg-amber-500/10 text-amber-500"

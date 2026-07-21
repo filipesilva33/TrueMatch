@@ -441,6 +441,31 @@ export default function SettingsPage() {
             </motion.div>
           ))}
 
+          {/* Launcher & Icons Customization Link */}
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: prefs.length * 0.05 }}
+            onClick={() => {
+              playUiSound('click');
+              navigate('/profile/settings/launcher');
+            }}
+            className="flex items-center p-6 rounded-[2rem] border cursor-pointer transition-all duration-300 bg-zinc-900/40 border-white/5 hover:border-pink-500/20 hover:bg-zinc-900 group select-none"
+          >
+            <div className="w-12 h-12 rounded-2xl flex items-center justify-center mr-4 bg-zinc-800 group-hover:bg-pink-500/20 transition-colors shrink-0">
+              <Smartphone className="w-6 h-6 text-zinc-500 group-hover:text-pink-500 transition-colors" />
+            </div>
+            
+            <div className="flex-1 min-w-0 pr-2">
+              <span className="text-sm font-bold block text-white">Launcher & Ícones</span>
+              <p className="text-[10px] text-zinc-500 mt-0.5 leading-relaxed">Configurar ícone de coração pulsante, temas premium e splash screen</p>
+            </div>
+
+            <div className="px-3 py-1.5 rounded-full bg-pink-500/10 border border-pink-500/20 text-[8px] font-black uppercase tracking-widest text-pink-400">
+              Personalizar
+            </div>
+          </motion.div>
+
           {/* Firebase Cloud Sync Card */}
           <motion.div
             initial={{ opacity: 0, y: 10 }}

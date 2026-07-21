@@ -10,7 +10,12 @@ export function useNotifications() {
     const user = auth.currentUser;
     if (!user) {
       const stored = localStorage.getItem('matchdeck_notifications');
-      setNotifications(stored ? JSON.parse(stored) : mockNotifications);
+      if (!stored) {
+        localStorage.setItem('matchdeck_notifications', JSON.stringify(mockNotifications));
+        setNotifications(mockNotifications);
+      } else {
+        setNotifications(JSON.parse(stored));
+      }
       return;
     }
 
@@ -43,6 +48,11 @@ export function useNotifications() {
           handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}/notifications/${id}`);
         }
       }
+    } else {
+      const stored = localStorage.getItem('matchdeck_notifications');
+      const current = stored ? JSON.parse(stored) : mockNotifications;
+      const updated = current.map((n: any) => n.id === id ? { ...n, isRead: true } : n);
+      localStorage.setItem('matchdeck_notifications', JSON.stringify(updated));
     }
   };
 
@@ -59,6 +69,29 @@ export function useNotifications() {
       } catch (err) {
         console.error("Error marking all as read in Firestore:", err);
       }
+    } else {
+      const stored = localStorage.getItem('matchdeck_notifications');
+      const current = stored ? JSON.parse(stored) : mockNotifications;
+      const updated = current.map((n: any) => ({ ...n, isRead: true }));
+      localStorage.setItem('matchdeck_notifications', JSON.stringify(updated));
+    }
+  };
+
+  const deleteNotification = async (id: string) => {
+    const user = auth.currentUser;
+    setNotifications(prev => prev.filter(n => n.id !== id));
+
+    if (user) {
+      try {
+        await deleteDoc(doc(db, 'users', user.uid, 'notifications', id));
+      } catch (err) {
+        console.error("Error deleting notification from Firestore:", err);
+      }
+    } else {
+      const stored = localStorage.getItem('matchdeck_notifications');
+      const current = stored ? JSON.parse(stored) : mockNotifications;
+      const updated = current.filter((n: any) => n.id !== id);
+      localStorage.setItem('matchdeck_notifications', JSON.stringify(updated));
     }
   };
 
@@ -68,6 +101,7 @@ export function useNotifications() {
     notifications,
     unreadCount,
     markAsRead,
-    markAllAsRead
+    markAllAsRead,
+    deleteNotification
   };
 }

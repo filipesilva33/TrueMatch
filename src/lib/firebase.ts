@@ -1,7 +1,7 @@
 // Import the functions you need from the SDKs you need
 import { initializeApp } from "firebase/app";
 import { getAuth } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 // TODO: Add SDKs for Firebase products that you want to use
 // https://firebase.google.com/docs/web/setup#available-libraries
 
@@ -23,8 +23,20 @@ const databaseId = firebaseConfig.projectId === "ace-nucleus-807pf"
   ? "ai-studio-truematchai-9b496603-02db-4df3-9465-3bc37f48c237"
   : undefined;
 
-// Initialize Firestore with dynamic database fallback
-export const db = getFirestore(app, databaseId);
+// Initialize Firestore with persistent local cache for native-like performance and offline support
+let firestoreDb;
+try {
+  firestoreDb = initializeFirestore(app, {
+    localCache: persistentLocalCache({
+      tabManager: persistentMultipleTabManager()
+    })
+  }, databaseId);
+} catch (e) {
+  console.warn("Failed to initialize Firestore with persistent local cache, falling back to standard memory cache.", e);
+  firestoreDb = getFirestore(app, databaseId);
+}
+
+export const db = firestoreDb;
 
 // Initialize Auth
 export const auth = getAuth(app);

@@ -55,3 +55,86 @@
   transform-origin: center;
 }
 
+/* Emoji Picker Customization */
+.EmojiPickerReact {
+  --epr-bg-color: #1a1c1e !important;
+  --epr-category-label-bg-color: #1a1c1e !important;
+  --epr-border-color: transparent !important;
+  --epr-hover-bg-color: rgba(255, 255, 255, 0.05) !important;
+  --epr-text-color: #ffffff !important;
+  --epr-search-input-bg-color: #121416 !important;
+  --epr-search-input-text-color: #ffffff !important;
+  --epr-search-input-placeholder-color: #8696a0 !important;
+  --epr-active-bar-color: #00a884 !important;
+  --epr-highlight-color: #00a884 !important;
+  --epr-category-icon-active-color: #00a884 !important;
+  
+  border-radius: 0 !important; /* Managed by outer wrapper */
+  border: none !important;
+  font-family: inherit !important;
+}
+
+/* Category Navigation (Top Row) */
+.EmojiPickerReact .epr-category-navigation {
+  background-color: #1a1c1e !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+  padding: 10px 14px !important;
+}
+
+/* Gray/Muted Category Buttons */
+.EmojiPickerReact .epr-cat-btn {
+  filter: grayscale(100%) opacity(50%) !important;
+  transition: all 0.2s ease !important;
+}
+
+.EmojiPickerReact .epr-cat-btn:hover,
+.EmojiPickerReact .epr-cat-btn[aria-selected="true"] {
+  filter: none !important;
+  opacity: 1 !important;
+}
+
+/* Underline under the selected category icon */
+.EmojiPickerReact .epr-active-bar {
+  background-color: #00a884 !important;
+  height: 3px !important;
+}
+
+/* Search Container & Input (Pill shape with green border) */
+.EmojiPickerReact .epr-search-container {
+  padding: 12px 14px !important;
+  background-color: #1a1c1e !important;
+}
+
+.EmojiPickerReact .epr-search {
+  border: 2.5px solid #00a884 !important;
+  border-radius: 9999px !important;
+  background-color: #121416 !important;
+  padding: 10px 16px 10px 42px !important;
+  font-size: 0.875rem !important;
+  color: #ffffff !important;
+}
+
+.EmojiPickerReact .epr-search:focus {
+  border-color: #00e6b3 !important;
+  outline: none !important;
+}
+
+/* Category Section Labels (e.g., Recentes, Smileys e pessoas) */
+.EmojiPickerReact .epr-emoji-category-label {
+  font-size: 0.825rem !important;
+  font-weight: 700 !important;
+  color: #8696a0 !important;
+  text-transform: capitalize !important;
+  background-color: #1a1c1e !important;
+  padding: 12px 16px 6px !important;
+}
+
+/* Body & Scrollbars */
+.EmojiPickerReact .epr-body::-webkit-scrollbar {
+  display: none !important;
+}
+.EmojiPickerReact .epr-body {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+

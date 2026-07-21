@@ -27,9 +27,65 @@ export interface User {
   religion?: string;
   personality?: string;
   isGold?: boolean;
+  isNew?: boolean;
 }
 
 export const mockUsers: User[] = [
+  {
+    id: "u_helena",
+    name: "Helena",
+    age: 27,
+    gender: 'feminino',
+    bio: "Narrativas visuais emocionantes. Fã de festivais de cinema, fotografia analógica e descobrir novos cafés charmosos pela cidade.",
+    images: [
+      "https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?auto=format&fit=crop&q=80&w=800"
+    ],
+    distance: 4,
+    verified: true,
+    interests: ["Cinema", "Direção", "Fotografia", "Vinho"],
+    compatibility: 95,
+    isOnline: true,
+    jobTitle: "Diretora Criativa de Audiovisual",
+    city: "Belo Horizonte",
+    isGold: true,
+    isNew: true,
+  },
+  {
+    id: "u_amanda",
+    name: "Amanda",
+    age: 27,
+    gender: 'feminino',
+    bio: "Açúcar, afeto e um bom papo sobre gastronomia internacional. Apaixonada por criar experiências doces e memoráveis.",
+    images: [
+      "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=800"
+    ],
+    distance: 6,
+    verified: true,
+    interests: ["Gastronomia", "Confeitaria", "Café", "Viagens"],
+    compatibility: 94,
+    isOnline: false,
+    jobTitle: "Chef Executiva de Confeitaria",
+    city: "Belo Horizonte",
+    isGold: true,
+  },
+  {
+    id: "u_eduardo",
+    name: "Eduardo G.",
+    age: 25,
+    gender: 'masculino',
+    bio: "Café, código limpo e conversas profundas sobre tecnologia, futuro e inteligência artificial. Sempre em busca de novos desafios.",
+    images: [
+      "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=800"
+    ],
+    distance: 8,
+    verified: true,
+    interests: ["Viagens", "Idiomas", "Tecnologia", "Café"],
+    compatibility: 94,
+    isOnline: false,
+    jobTitle: "Full Stack Developer",
+    city: "São Paulo",
+    isGold: true,
+  },
   {
     id: "u1",
     name: "Isabella",
@@ -38,19 +94,20 @@ export const mockUsers: User[] = [
     bio: "Arquiteta apaixonada por café, design urbano e viagens espontâneas. Vamos conversar sobre arte ou planejar a próxima viagem?",
     images: [
       "https://images.unsplash.com/photo-1524504280099-c1224cd822f4?auto=format&fit=crop&q=80&w=800",
-      "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=800",
+      "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&q=80&w=800"
     ],
     distance: 2,
     verified: true,
-    interests: ["Café", "Livros", "Museus", "Ciclismo", "Vinho"],
-    compatibility: 94,
-    isOnline: true,
+    interests: ["Arquitetura", "Café", "Livros", "Museus", "Vinho"],
+    compatibility: 93,
+    isOnline: false,
     jobTitle: "Arquiteta Sênior",
     education: "Arquitetura e Urbanismo - USP",
     relationshipStatus: "Solteira",
-    city: "São Paulo, SP",
+    city: "São Paulo",
     intent: "Relacionamento sério",
     lifestyle: ["Café", "Livros", "Museus", "Ciclismo", "Vinho"],
+    isGold: true,
   },
   {
     id: "u2",
@@ -113,6 +170,7 @@ export const mockUsers: User[] = [
     city: "Belo Horizonte, MG",
     intent: "Amizade",
     lifestyle: ["Gosta de Pets"],
+    isNew: true,
   },
   {
     id: "u5",
