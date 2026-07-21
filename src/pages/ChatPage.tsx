@@ -512,7 +512,12 @@ export default function ChatPage() {
           const duration = recordingTimeRef.current > 0 ? recordingTimeRef.current : 1;
           sendAudioMessage(audioUrl, duration);
           
-          stream.getTracks().forEach(track => track.stop());
+          try {
+            stream.getTracks().forEach(track => track.stop());
+          } catch (e) {}
+
+          mediaRecorderRef.current = null;
+          audioChunksRef.current = [];
         };
 
         recorder.start();
@@ -567,29 +572,32 @@ export default function ChatPage() {
       sendAudioMessage(silentAudioUrl, duration);
       cleanupRecording();
     } else {
+      cleanupRecording();
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         mediaRecorderRef.current.stop();
       }
-      cleanupRecording();
     }
   };
 
   const cancelRecording = () => {
     if (!isRecording) return;
     
+    cleanupRecording();
+    
     if (!isSimulated && mediaRecorderRef.current) {
       mediaRecorderRef.current.ondataavailable = null;
       mediaRecorderRef.current.onstop = null;
       if (mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop();
+        try {
+          mediaRecorderRef.current.stop();
+        } catch (e) {}
       }
       try {
         mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
-      } catch (e) {
-        // ignore
-      }
+      } catch (e) {}
     }
-    cleanupRecording();
+    mediaRecorderRef.current = null;
+    audioChunksRef.current = [];
   };
 
   const cleanupRecording = () => {
@@ -607,8 +615,6 @@ export default function ChatPage() {
       audioContextRef.current.close().catch(() => {});
       audioContextRef.current = null;
     }
-    mediaRecorderRef.current = null;
-    audioChunksRef.current = [];
     setAudioData(new Array(25).fill(3));
   };
 
@@ -1010,6 +1016,11 @@ export default function ChatPage() {
       
       setMuteStatusActive(!isMuted);
       setShowMuteStatusModal(true);
+      
+      // Auto dismiss modal after 2 seconds
+      setTimeout(() => {
+        setShowMuteStatusModal(false);
+      }, 2000);
       
       return newMuted;
     });
@@ -1744,21 +1755,11 @@ export default function ChatPage() {
               <h3 className="text-lg font-bold mb-1">
                 {muteStatusActive ? "Silenciamento Ativado" : "Silenciamento Desativado"}
               </h3>
-              <p className="text-xs text-zinc-400 mb-6 leading-relaxed">
+              <p className="text-xs text-zinc-400 leading-relaxed">
                 {muteStatusActive 
                   ? "As notificações desta conversa foram silenciadas com sucesso." 
                   : "As notificações desta conversa foram reativadas."}
               </p>
-
-              <button
-                onClick={() => {
-                  playUiSound('click');
-                  setShowMuteStatusModal(false);
-                }}
-                className="w-full bg-pink-500 hover:bg-pink-600 text-white font-bold py-2.5 rounded-xl text-xs uppercase tracking-wider transition-colors shadow-lg shadow-pink-500/10"
-              >
-                Entendi
-              </button>
             </motion.div>
           </motion.div>
         )}
@@ -1991,222 +1992,32 @@ export default function ChatPage() {
                     setShowEmojiPicker(false);
                     setMediaSearchQuery("");
                   }}></div>
-                  <div className="relative z-50 border border-white/10 rounded-[2rem] overflow-hidden shadow-2xl bg-[#1a1c1e] flex flex-col h-[420px]">
+                  <div className="relative z-50 border border-white/10 rounded-[2rem] overflow-hidden shadow-2xl bg-[#1a1c1e] flex flex-col h-[360px]">
                     
-                    {/* Picker Content Area based on pickerTab */}
+                    {/* Picker Content Area containing ONLY EmojiPicker with search disabled */}
                     <div className="flex-1 overflow-hidden flex flex-col">
-                      {pickerTab === 'emoji' ? (
-                        <EmojiPicker 
-                          theme={Theme.DARK} 
-                          emojiStyle={EmojiStyle.APPLE}
-                          width="100%"
-                          height={360}
-                          previewConfig={{ showPreview: false }}
-                          searchPlaceHolder="Pesquisar emoji"
-                          categories={[
-                            { category: 'suggested', name: 'Recentes' },
-                            { category: 'smileys_people', name: 'Smileys e pessoas' },
-                            { category: 'animals_nature', name: 'Animais e Natureza' },
-                            { category: 'food_drink', name: 'Comida e Bebida' },
-                            { category: 'travel_places', name: 'Viagens e Lugares' },
-                            { category: 'activities', name: 'Atividades' },
-                            { category: 'objects', name: 'Objetos' },
-                            { category: 'symbols', name: 'Símbolos' },
-                            { category: 'flags', name: 'Bandeiras' }
-                          ] as any}
-                          onEmojiClick={(emojiData) => {
-                            setInputValue(prev => prev + emojiData.emoji);
-                          }}
-                        />
-                      ) : pickerTab === 'gif' ? (
-                        <div className="flex-1 flex flex-col p-4 overflow-hidden h-[360px]">
-                          {/* Search Input */}
-                          <div className="relative mb-3 flex items-center shrink-0">
-                            <Search className="absolute left-3 w-4 h-4 text-zinc-400" />
-                            <input 
-                              type="text" 
-                              placeholder="Pesquisar GIF..." 
-                              value={mediaSearchQuery}
-                              onChange={(e) => setMediaSearchQuery(e.target.value)}
-                              className="w-full pl-10 pr-4 py-2 bg-[#121416] border-2 border-[#00a884] rounded-full text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-[#00e6b3] transition-colors"
-                            />
-                            {mediaSearchQuery && (
-                              <button 
-                                onClick={() => setMediaSearchQuery("")}
-                                className="absolute right-3 p-1 rounded-full hover:bg-white/5 text-zinc-400 hover:text-white"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
-                          
-                          {/* Scrollable GIF Grid */}
-                          <div className="flex-1 overflow-y-auto grid grid-cols-2 gap-2 pr-1 hide-scrollbar">
-                            {loadingMedia ? (
-                              <div className="col-span-2 py-12 text-center flex flex-col items-center justify-center text-zinc-400">
-                                <div className="w-8 h-8 rounded-full border-2 border-zinc-700 border-t-[#00a884] animate-spin mb-3" />
-                                <p className="text-xs font-semibold">Buscando GIFs na internet...</p>
-                              </div>
-                            ) : (() => {
-                              const displayGifs = (giphyGifs.length > 0 && !mediaError) 
-                                ? giphyGifs 
-                                : curatedGifs.filter(gif => {
-                                    if (!mediaSearchQuery) return true;
-                                    const q = mediaSearchQuery.toLowerCase().trim();
-                                    return gif.title.toLowerCase().includes(q) || gif.tags.some(t => t.toLowerCase().includes(q));
-                                  });
-
-                              if (displayGifs.length > 0) {
-                                return displayGifs.map(gif => (
-                                  <button 
-                                    key={gif.id}
-                                    onClick={() => {
-                                      sendGifMessage(gif.url);
-                                      setShowEmojiPicker(false);
-                                      setMediaSearchQuery("");
-                                    }}
-                                    className="group relative h-28 overflow-hidden rounded-xl border border-white/5 bg-zinc-900/50 hover:border-[#00a884] active:scale-[0.98] transition-all"
-                                  >
-                                    <img 
-                                      src={gif.url} 
-                                      alt={gif.title} 
-                                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                                      referrerPolicy="no-referrer"
-                                    />
-                                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                      <p className="text-[10px] text-zinc-300 font-medium truncate text-left">{gif.title}</p>
-                                    </div>
-                                  </button>
-                                ));
-                              } else {
-                                return (
-                                  <div className="col-span-2 py-12 text-center flex flex-col items-center justify-center text-zinc-500">
-                                    <span className="text-2xl mb-1">🥺</span>
-                                    <p className="text-xs font-medium">Nenhum GIF encontrado</p>
-                                  </div>
-                                );
-                              }
-                            })()}
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex-1 flex flex-col p-4 overflow-hidden h-[360px]">
-                          {/* Search Input */}
-                          <div className="relative mb-3 flex items-center shrink-0">
-                            <Search className="absolute left-3 w-4 h-4 text-zinc-400" />
-                            <input 
-                              type="text" 
-                              placeholder="Pesquisar figurinha..." 
-                              value={mediaSearchQuery}
-                              onChange={(e) => setMediaSearchQuery(e.target.value)}
-                              className="w-full pl-10 pr-4 py-2 bg-[#121416] border-2 border-[#00a884] rounded-full text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-[#00e6b3] transition-colors"
-                            />
-                            {mediaSearchQuery && (
-                              <button 
-                                onClick={() => setMediaSearchQuery("")}
-                                className="absolute right-3 p-1 rounded-full hover:bg-white/5 text-zinc-400 hover:text-white"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
-                          
-                          {/* Scrollable Sticker Grid */}
-                          <div className="flex-1 overflow-y-auto grid grid-cols-3 gap-2.5 pr-1 hide-scrollbar">
-                            {loadingMedia ? (
-                              <div className="col-span-3 py-12 text-center flex flex-col items-center justify-center text-zinc-400">
-                                <div className="w-8 h-8 rounded-full border-2 border-zinc-700 border-t-[#00a884] animate-spin mb-3" />
-                                <p className="text-xs font-semibold">Buscando figurinhas...</p>
-                              </div>
-                            ) : (() => {
-                              const displayStickers = (giphyStickers.length > 0 && !mediaError) 
-                                ? giphyStickers 
-                                : curatedStickers.filter(sticker => {
-                                    if (!mediaSearchQuery) return true;
-                                    const q = mediaSearchQuery.toLowerCase().trim();
-                                    return sticker.title.toLowerCase().includes(q) || sticker.tags.some(t => t.toLowerCase().includes(q));
-                                  });
-
-                              if (displayStickers.length > 0) {
-                                return displayStickers.map(sticker => (
-                                  <button 
-                                    key={sticker.id}
-                                    onClick={() => {
-                                      sendStickerMessage(sticker.url);
-                                      setShowEmojiPicker(false);
-                                      setMediaSearchQuery("");
-                                    }}
-                                    className="group relative h-20 flex items-center justify-center p-1.5 overflow-hidden rounded-xl border border-white/5 bg-zinc-900/10 hover:bg-white/5 hover:border-[#00a884] active:scale-[0.98] transition-all"
-                                  >
-                                    <img 
-                                      src={sticker.url} 
-                                      alt={sticker.title} 
-                                      className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
-                                      referrerPolicy="no-referrer"
-                                    />
-                                  </button>
-                                ));
-                              } else {
-                                return (
-                                  <div className="col-span-3 py-12 text-center flex flex-col items-center justify-center text-zinc-500">
-                                    <span className="text-2xl mb-1">🥺</span>
-                                    <p className="text-xs font-medium">Nenhum sticker encontrado</p>
-                                  </div>
-                                );
-                              }
-                            })()}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Bottom pill-shaped navigation container matching Android/WhatsApp */}
-                    <div className="flex items-center justify-center bg-[#1a1c1e] border-t border-white/5 py-3 px-4 gap-7 shrink-0">
-                      <button 
-                        onClick={() => {
-                          setPickerTab('emoji');
-                          setMediaSearchQuery("");
+                      <EmojiPicker 
+                        theme={Theme.DARK} 
+                        emojiStyle={EmojiStyle.APPLE}
+                        width="100%"
+                        height={360}
+                        previewConfig={{ showPreview: false }}
+                        searchDisabled={true}
+                        categories={[
+                          { category: 'suggested', name: 'Recentes' },
+                          { category: 'smileys_people', name: 'Smileys e pessoas' },
+                          { category: 'animals_nature', name: 'Animais e Natureza' },
+                          { category: 'food_drink', name: 'Comida e Bebida' },
+                          { category: 'travel_places', name: 'Viagens e Lugares' },
+                          { category: 'activities', name: 'Atividades' },
+                          { category: 'objects', name: 'Objetos' },
+                          { category: 'symbols', name: 'Símbolos' },
+                          { category: 'flags', name: 'Bandeiras' }
+                        ] as any}
+                        onEmojiClick={(emojiData) => {
+                          setInputValue(prev => prev + emojiData.emoji);
                         }}
-                        className={cn(
-                          "flex items-center justify-center transition-all hover:scale-110 active:scale-95",
-                          pickerTab === 'emoji' ? "text-[#00a884] scale-105" : "text-zinc-500 hover:text-zinc-300"
-                        )} 
-                        title="Emojis"
-                      >
-                        <Smile className="w-[22px] h-[22px]" />
-                      </button>
-                      
-                      <button 
-                        onClick={() => {
-                          setPickerTab('gif');
-                          setMediaSearchQuery("");
-                        }}
-                        className={cn(
-                          "font-extrabold text-[10px] tracking-widest px-2 py-0.5 rounded border transition-all uppercase hover:scale-110 active:scale-95",
-                          pickerTab === 'gif' 
-                            ? "text-[#00a884] border-[#00a884] scale-105" 
-                            : "text-zinc-500 border-zinc-700/60 hover:text-zinc-300"
-                        )} 
-                        title="GIFs"
-                      >
-                        GIF
-                      </button>
-                      
-                      <button 
-                        onClick={() => {
-                          setPickerTab('sticker');
-                          setMediaSearchQuery("");
-                        }}
-                        className={cn(
-                          "flex items-center justify-center transition-all hover:scale-110 active:scale-95",
-                          pickerTab === 'sticker' ? "text-[#00a884] scale-105" : "text-zinc-500 hover:text-zinc-300"
-                        )} 
-                        title="Stickers"
-                      >
-                        <svg viewBox="0 0 24 24" className="w-[22px] h-[22px] fill-current">
-                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17.93c-3.95-.49-7-3.85-7-7.93s3.05-7.44 7-7.93v15.86zm2-1.25V5.32c2.83.95 5 3.65 5 6.68s-2.17 5.73-5 6.68z"/>
-                        </svg>
-                      </button>
+                      />
                     </div>
 
                   </div>

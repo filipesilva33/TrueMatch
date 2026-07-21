@@ -262,15 +262,6 @@ const SwipeCard = React.memo(function SwipeCard({
                 </span>
               </div>
             </div>
-            <button 
-              onClick={(e) => {
-                e.stopPropagation();
-                onReportBlockClick(user);
-              }}
-              className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-sm flex items-center justify-center mb-1 transition-all active:scale-90"
-            >
-              <Info className="w-5 h-5 text-white" />
-            </button>
           </div>
 
           <div className="flex flex-col space-y-2 mt-2">
@@ -797,7 +788,7 @@ export default function DiscoverPage() {
                 onClick={() => setShowProfile(false)}
                 className="absolute top-4 right-4 z-10 w-12 h-12 bg-black/40 backdrop-blur-md rounded-full flex items-center justify-center text-white hover:bg-black/60 transition-colors"
               >
-                <ChevronDown className="w-8 h-8" />
+                <X className="w-6 h-6" />
               </button>
 
               <div className="relative h-[65vh] w-full">
@@ -1064,6 +1055,19 @@ export default function DiscoverPage() {
                     ))}
                   </section>
                 )}
+
+                <div className="flex justify-center mt-8 pb-2">
+                  <button 
+                    onClick={() => {
+                      setShowProfile(false);
+                      handleReportBlockClick(currentCard);
+                    }}
+                    className="text-xs text-zinc-500 hover:text-red-400 transition-colors flex items-center gap-1.5 bg-white/[0.03] hover:bg-white/5 px-4 py-2 rounded-full border border-white/5 active:scale-95"
+                  >
+                    <ShieldAlert className="w-3.5 h-3.5" />
+                    <span>Denunciar ou Bloquear Perfil</span>
+                  </button>
+                </div>
 
                 {/* Bottom Actions inside the profile view */}
                 <div className="flex justify-center items-center pt-12 pb-8 space-x-8">

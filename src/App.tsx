@@ -19,7 +19,7 @@ import KYCPage from './pages/settings/KYCPage';
 import KYCDocumentSelectionPage from './pages/settings/KYCDocumentSelectionPage';
 import KYCCameraPage from './pages/settings/KYCCameraPage';
 import SettingsPage from './pages/settings/SettingsPage';
-import LauncherPage from './pages/settings/LauncherPage';
+
 import PrivacyPage from './pages/settings/PrivacyPage';
 import SecurityPage from './pages/settings/SecurityPage';
 import WelcomePage from './pages/WelcomePage';
@@ -232,7 +232,7 @@ export default function App() {
             <Route path="profile/settings/kyc/document" element={<KYCDocumentSelectionPage />} />
             <Route path="profile/settings/kyc/camera" element={<KYCCameraPage />} />
             <Route path="profile/settings/general" element={<SettingsPage />} />
-            <Route path="profile/settings/launcher" element={<LauncherPage />} />
+
             <Route path="profile/settings/privacy" element={<PrivacyPage />} />
             <Route path="profile/settings/security" element={<SecurityPage />} />
           </Route>

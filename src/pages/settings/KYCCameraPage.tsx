@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { ArrowLeft, X, Camera, CheckCircle, Info, ScanLine } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { ArrowLeft, X, Camera, CheckCircle, Info, ScanLine, Loader2, AlertTriangle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
+import { playUiSound } from '../../utils/audio';
 
 export default function KYCCameraPage() {
   const navigate = useNavigate();
@@ -9,21 +10,132 @@ export default function KYCCameraPage() {
   const [isCapturing, setIsCapturing] = useState(false);
   const [analysisStep, setAnalysisStep] = useState(0);
 
+  // Real Camera States and Refs
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
+  const [capturedImages, setCapturedImages] = useState<{ [key: string]: string }>({});
+
+  useEffect(() => {
+    let activeStream: MediaStream | null = null;
+    
+    async function startCamera() {
+      if (step === 'analyzing' || step === 'success') return;
+      
+      setCameraError(null);
+      setCameraActive(false);
+      setCapturedPhoto(null);
+      
+      try {
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          const constraints = {
+            video: {
+              facingMode: step === 'face' ? 'user' : 'environment',
+              width: { ideal: 1280 },
+              height: { ideal: 720 }
+            }
+          };
+          const stream = await navigator.mediaDevices.getUserMedia(constraints);
+          activeStream = stream;
+          streamRef.current = stream;
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            videoRef.current.onloadedmetadata = () => {
+              videoRef.current?.play().catch(err => console.error("Error playing video stream:", err));
+              setCameraActive(true);
+            };
+          }
+        } else {
+          setCameraError("Este navegador não suporta acesso direto à câmera.");
+        }
+      } catch (err: any) {
+        console.error("Erro ao iniciar câmera:", err);
+        setCameraError("Não foi possível acessar a câmera do dispositivo. Verifique se deu permissões.");
+      }
+    }
+
+    startCamera();
+
+    return () => {
+      if (activeStream) {
+        activeStream.getTracks().forEach(track => track.stop());
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+    };
+  }, [step]);
+
   const handleCapture = () => {
     setIsCapturing(true);
+    playUiSound('click');
     
-    // Simulate capture delay
     setTimeout(() => {
       setIsCapturing(false);
       
-      if (step === 'front') {
-        setStep('back');
-      } else if (step === 'back') {
-        setStep('face');
-      } else if (step === 'face') {
-        setStep('analyzing');
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      
+      if (video && cameraActive && canvas) {
+        try {
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            canvas.width = video.videoWidth || 640;
+            canvas.height = video.videoHeight || 480;
+            
+            // Mirror selfie for natural photo look
+            if (step === 'face') {
+              ctx.translate(canvas.width, 0);
+              ctx.scale(-1, 1);
+            }
+            
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+            setCapturedPhoto(dataUrl);
+            setCapturedImages(prev => ({ ...prev, [step]: dataUrl }));
+          }
+        } catch (e) {
+          console.error("Error capturing video frame:", e);
+          const fallbackUrl = step === 'face' 
+            ? "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=600"
+            : "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=600&auto=format&fit=crop";
+          setCapturedPhoto(fallbackUrl);
+          setCapturedImages(prev => ({ ...prev, [step]: fallbackUrl }));
+        }
+      } else {
+        // Mock capture fallback
+        const fallbackUrl = step === 'face' 
+          ? "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=600"
+          : "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=600&auto=format&fit=crop";
+        setCapturedPhoto(fallbackUrl);
+        setCapturedImages(prev => ({ ...prev, [step]: fallbackUrl }));
       }
-    }, 800);
+    }, 350);
+  };
+
+  const handleSaveImages = () => {
+    localStorage.setItem('truematch_kyc_status', 'pending');
+    localStorage.setItem('truematch_kyc_documents', JSON.stringify(capturedImages));
+    
+    // Update local profile with pending state and the selfie taken
+    const storedMe = localStorage.getItem('truematch_profile_me');
+    if (storedMe) {
+      try {
+        const parsed = JSON.parse(storedMe);
+        parsed.kycStatus = 'pending';
+        parsed.verified = false; // Pending approval
+        if (capturedImages['face']) {
+          parsed.images = [capturedImages['face'], ...(parsed.images?.slice(1) || [])];
+        }
+        localStorage.setItem('truematch_profile_me', JSON.stringify(parsed));
+      } catch (e) {
+        console.error("Error updating profile with new selfie photo:", e);
+      }
+    }
   };
 
   useEffect(() => {
@@ -94,7 +206,7 @@ export default function KYCCameraPage() {
 
         {step !== 'success' && step !== 'analyzing' && (
           <button 
-            onClick={() => navigate('/profile/settings/kyc')} 
+            onClick={() => navigate('/profile')} 
             className="absolute right-5 w-10 h-10 rounded-full bg-zinc-900 border border-white/5 flex items-center justify-center text-zinc-400 hover:text-white transition-colors"
           >
             <X className="w-5 h-5 text-white" />
@@ -122,11 +234,52 @@ export default function KYCCameraPage() {
 
             {/* Camera Viewfinder */}
             <div className="mt-8 mb-6">
-              <div className={`relative w-full overflow-hidden bg-[#0a0a0a] border border-white/[0.03] flex items-center justify-center ${step === 'face' ? 'aspect-[3/4] rounded-full mx-auto max-w-[280px]' : 'aspect-[4/3] rounded-[1.5rem]'}`}>
+              <div className={`relative w-full overflow-hidden bg-zinc-950 border border-white/5 flex items-center justify-center ${step === 'face' ? 'aspect-[3/4] rounded-full mx-auto max-w-[280px]' : 'aspect-[4/3] rounded-[1.5rem]'}`}>
                 
+                {/* Real video element */}
+                {!capturedPhoto && (
+                  <video 
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="absolute inset-0 w-full h-full object-cover"
+                  />
+                )}
+
+                {/* Captured photo preview */}
+                {capturedPhoto && (
+                  <img 
+                    src={capturedPhoto} 
+                    alt="Foto capturada" 
+                    className="absolute inset-0 w-full h-full object-cover"
+                  />
+                )}
+
+                {/* Hidden canvas for capturing frames */}
+                <canvas ref={canvasRef} className="hidden" />
+
+                {/* Fallback/loading view if camera not active and no captured image */}
+                {!cameraActive && !capturedPhoto && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-zinc-900/80">
+                    {cameraError ? (
+                      <div className="space-y-3">
+                        <AlertTriangle className="w-10 h-10 text-amber-500 mx-auto" />
+                        <p className="text-zinc-300 text-xs font-semibold px-4">{cameraError}</p>
+                        <p className="text-zinc-500 text-[10px]">Utilizando foto de demonstração de alta qualidade para testes.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <Loader2 className="w-8 h-8 text-cyan-400 animate-spin mx-auto" />
+                        <p className="text-zinc-400 text-xs font-semibold">Acessando câmera do dispositivo...</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Frame guidelines */}
-                {step !== 'face' && (
-                  <div className="absolute inset-6">
+                {step !== 'face' && !capturedPhoto && (
+                  <div className="absolute inset-6 pointer-events-none z-10">
                     {/* Corner accents */}
                     <div className="absolute top-0 left-0 w-8 h-8 border-t-[3px] border-l-[3px] border-cyan-400 rounded-tl-xl"></div>
                     <div className="absolute top-0 right-0 w-8 h-8 border-t-[3px] border-r-[3px] border-cyan-400 rounded-tr-xl"></div>
@@ -135,27 +288,25 @@ export default function KYCCameraPage() {
                   </div>
                 )}
 
-                {step === 'face' && (
-                  <div className="absolute inset-4 border-2 border-dashed border-cyan-400/50 rounded-full" />
+                {step === 'face' && !capturedPhoto && (
+                  <div className="absolute inset-4 border-2 border-dashed border-cyan-400/50 rounded-full pointer-events-none z-10" />
                 )}
 
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  {step === 'face' ? (
-                     <Camera className="w-12 h-12 text-zinc-700 mb-6" />
-                  ) : (
-                     <ScanLine className="w-12 h-12 text-zinc-700 mb-6" />
-                  )}
-                  <span className="text-zinc-700 text-xs font-medium px-4 py-1.5 rounded-full bg-zinc-900/50 backdrop-blur-sm text-center">
-                    {step === 'face' ? 'Enquadre seu rosto' : 'Posicione o documento na moldura'}
-                  </span>
-                </div>
+                {/* Viewfinder helper text */}
+                {cameraActive && !capturedPhoto && (
+                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 pointer-events-none">
+                    <span className="text-white text-[9px] font-black uppercase tracking-wider px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-sm border border-white/10 text-center">
+                      {step === 'face' ? 'Enquadre seu rosto' : 'Centralize o documento'}
+                    </span>
+                  </div>
+                )}
 
                 {isCapturing && (
                   <motion.div 
                     initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="absolute inset-0 bg-white"
+                    animate={{ opacity: [0, 1, 0] }}
+                    transition={{ duration: 0.3 }}
+                    className="absolute inset-0 bg-white z-20"
                   />
                 )}
               </div>
@@ -168,30 +319,56 @@ export default function KYCCameraPage() {
               </div>
               <p className="text-zinc-400 text-xs leading-relaxed font-medium">
                 {step === 'face' 
-                  ? 'Certifique-se de estar em um ambiente bem iluminado e sem acessórios (óculos escuros, chapéu).' 
-                  : 'Evite reflexos e certifique-se de que o texto está legível.'}
+                  ? 'Certifique-se de estar em um ambiente bem iluminado e sem óculos ou acessórios.' 
+                  : 'Evite reflexos de luz e certifique-se de que o documento esteja nítido.'}
               </p>
             </div>
 
             {/* Camera Controls */}
             <div className="mt-auto pt-8 pb-[80px]">
-              <button 
-                onClick={handleCapture}
-                disabled={isCapturing}
-                className="w-full bg-cyan-400 hover:bg-cyan-300 disabled:bg-cyan-400/80 transition-all text-black font-black py-4 rounded-full text-[15px] flex items-center justify-center gap-2 active:scale-95"
-              >
-                {isCapturing ? (
-                  <>
-                    <div className="w-5 h-5 rounded-full border-2 border-black/20 border-t-black animate-spin" />
-                    Capturando...
-                  </>
-                ) : (
-                  <>
-                    <Camera className="w-5 h-5" />
-                    Capturar Imagem
-                  </>
-                )}
-              </button>
+              {!capturedPhoto ? (
+                <button 
+                  onClick={handleCapture}
+                  disabled={isCapturing}
+                  className="w-full bg-cyan-400 hover:bg-cyan-300 disabled:bg-cyan-400/80 transition-all text-black font-black py-4 rounded-full text-[15px] flex items-center justify-center gap-2 active:scale-95"
+                >
+                  {isCapturing ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Capturando...
+                    </>
+                  ) : (
+                    <>
+                      <Camera className="w-5 h-5" />
+                      Capturar Imagem
+                    </>
+                  )}
+                </button>
+              ) : (
+                <div className="flex gap-4">
+                  <button 
+                    onClick={() => setCapturedPhoto(null)}
+                    className="flex-1 bg-zinc-900 border border-white/10 hover:bg-zinc-800 transition-colors text-white font-bold py-4 rounded-full text-[15px] active:scale-95"
+                  >
+                    Tirar Outra
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setCapturedPhoto(null);
+                      if (step === 'front') {
+                        setStep('back');
+                      } else if (step === 'back') {
+                        setStep('face');
+                      } else if (step === 'face') {
+                        setStep('analyzing');
+                      }
+                    }}
+                    className="flex-1 bg-cyan-400 hover:bg-cyan-300 transition-colors text-black font-black py-4 rounded-full text-[15px] active:scale-95"
+                  >
+                    Confirmar foto
+                  </button>
+                </div>
+              )}
             </div>
           </motion.div>
         )}
@@ -262,7 +439,10 @@ export default function KYCCameraPage() {
             
             <div className="w-full pb-8">
               <button 
-                onClick={() => navigate('/profile/settings/kyc')}
+                onClick={() => {
+                  handleSaveImages();
+                  navigate('/profile/settings/kyc');
+                }}
                 className="w-full bg-cyan-400 hover:bg-cyan-300 transition-colors text-black font-black py-4 rounded-full text-[15px] active:scale-95"
               >
                 Concluir

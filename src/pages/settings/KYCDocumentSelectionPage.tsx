@@ -46,7 +46,7 @@ export default function KYCDocumentSelectionPage() {
           </div>
 
           <button 
-            onClick={() => navigate('/profile/settings/kyc')} 
+            onClick={() => navigate('/profile')} 
             className="absolute right-5 w-10 h-10 rounded-full bg-zinc-900 border border-white/5 flex items-center justify-center text-zinc-400 hover:text-white transition-colors"
           >
             <X className="w-5 h-5 text-white" />
